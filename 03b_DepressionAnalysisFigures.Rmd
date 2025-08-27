@@ -1,0 +1,1081 @@
+---
+title: "03b_DepressionAnalysis"
+author: "Chris Cox"
+date: "2025-07-30"
+output: pdf_document
+editor_options: 
+  chunk_output_type: console
+---
+
+# Home Time Percentage and Depression
+
+## Home Time and Depression Score
+
+```{r}
+modelHomeTimePercent <- readRDS(here("analysis_code", "models", "modelHomeTimePercent.rds"))
+
+newdata <- modelHomeTimePercent$data
+
+pred_data <- add_predicted_draws(modelHomeTimePercent, newdata = newdata, allow_new_levels = T)
+
+pred_data_subj <- pred_data %>%
+  group_by(Leave, d_epdst_sum, Role, ParticipantID) %>%
+  summarise(mean = mean(.prediction) * 100)
+
+weekday_data <- pred_data_subj %>% #filter(isWeekend == "Weekday") %>%
+  mutate(OnLeave = case_when(
+    Leave == "Paternity Leave" & Role == "Father" ~ "On Leave",
+    Leave == "Maternity Leave" & Role == "Mother" ~ "On Leave",
+    Leave == "Paternity Leave" & Role == "Mother" ~ "Not On Leave",
+    Leave == "Maternity Leave" & Role == "Father" ~ "Not On Leave",
+  ))
+
+newdata_grid <- expand_grid(
+  Role = c("Father", "Mother"),
+  Leave = c("Maternity Leave", "Paternity Leave"),
+  d_epdst_sum = c(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18), 
+  SleepQuality = 3,
+  ParticipantID = NA
+)
+
+predictions <- modelHomeTimePercent %>%
+  epred_draws(newdata = newdata_grid, re_formula = NA) %>%
+  ungroup()
+
+predictions_summary <- predictions %>%
+  group_by(Role, Leave, d_epdst_sum) %>%
+  summarise(
+    mean_home_time = mean(.epred),
+    ci_lower_80 = quantile(.epred, 0.055),
+    ci_upper_80 = quantile(.epred, 0.945),
+    ci_lower_95 = quantile(.epred, 0.975),
+    ci_upper_95 = quantile(.epred, 0.025),
+    .groups = "drop"
+  ) %>%
+  arrange(Role, Leave, d_epdst_sum) %>%
+  mutate(OnLeave = case_when(
+    Leave == "Paternity Leave" & Role == "Father" ~ "On Leave",
+    Leave == "Maternity Leave" & Role == "Mother" ~ "On Leave",
+    Leave == "Paternity Leave" & Role == "Mother" ~ "Not On Leave",
+    Leave == "Maternity Leave" & Role == "Father" ~ "Not On Leave",
+  ))
+
+
+HomeTimePlot <- ggplot() +
+  geom_smooth(aes(x = d_epdst_sum, y = mean_home_time * 100, color = Role), se = F, formula = y ~ splines::ns(x, df = 3), method = "lm", data = filter(predictions_summary, OnLeave == "On Leave")) +
+  geom_smooth(aes(x = d_epdst_sum, y = ci_lower_80 * 100, color = Role), se = F, formula = y ~ splines::ns(x, df = 3), method = "lm", linetype = "dashed", data = filter(predictions_summary, OnLeave == "On Leave")) +
+  geom_smooth(aes(x = d_epdst_sum, y = ci_upper_80 * 100, color = Role), se = F, formula = y ~ splines::ns(x, df = 3), method = "lm", linetype = "dashed", data = filter(predictions_summary, OnLeave == "On Leave")) +
+  geom_point(alpha = 0.9, size = 3, position = position_jitter(width = 0.1), aes(x = as.numeric(d_epdst_sum) - 1, y = mean, color = Role, fill = Role), data = filter(weekday_data, OnLeave == "On Leave")) +
+  facet_wrap(~Role, ncol = 2) +
+  scale_y_continuous(breaks = seq(40, 100, 10), limit = c(39, 100)) +
+  scale_x_continuous(breaks = seq(0, 20, 5)) +
+  scale_color_okabe_ito() +
+  scale_fill_okabe_ito() +
+  labs(x = "Edinburgh Postnatal Depression Score", y = "Predicted Home Time (%)") +
+  ggtitle('A) Home Time by Postnatal Depression Score') +
+  theme_minimal() +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 20, color = "black", hjust = 0.5, face = "bold"),
+    axis.text.x = element_text(size = 15, color = "black"),
+    axis.title.x = element_text(size = 15, color = "black"),
+    axis.text.y = element_text(size = 15, color = "black"),
+    axis.title.y = element_text(size = 15, color = "black"),
+    legend.title = element_blank(),
+    legend.position = "none",
+    legend.key.size = unit(1, "lines"),
+    legend.text = element_text(size = 15),
+    legend.background = element_rect(fill = "transparent", color = NA),
+    legend.key = element_rect(fill = "transparent", color = NA),
+    panel.border = element_blank(),
+    strip.background = element_rect(color="white", fill="white", linewidth=1.5, linetype="solid"),
+    strip.text.x = element_text(size = 20, color = "black"),
+    panel.spacing = unit(3, "lines"),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    plot.margin = margin(t = 0.1,
+                             r = 0.1,
+                             b = 0.1,
+                             l = 0.1,
+                             unit = "cm"))
+
+HomeTimePlot
+```
+
+## Posterior Predictions Plot, Depression
+
+```{r}
+modelmaxdistance <- readRDS(here("analysis_code", "models", "modelmaxdistance.rds"))
+modellocationvariance <- readRDS(here("analysis_code", "models", "modellocationvariance.rds"))
+
+maxdist1 <- as_draws_df(modelmaxdistance)
+HPer1 <- as_draws_df(modelHomeTimePercent)
+LocVar1 <- as_draws_df(modellocationvariance)
+
+# MODEL 1: Max Distance - Distance and Hurdle effects
+model1_mother_distance <- maxdist1$`bsp_RoleMother:mod_epdst_sum`
+model1_father_distance <- maxdist1$`bsp_RoleFather:mod_epdst_sum` + maxdist1$`bsp_RoleFather:mod_epdst_sum:LeavePaternityLeave`
+model1_mother_hurdle <- exp(maxdist1$`bsp_hu_RoleMother:mod_epdst_sum`)
+model1_father_hurdle <- exp(maxdist1$`bsp_hu_RoleFather:mod_epdst_sum` + maxdist1$`bsp_hu_RoleFather:mod_epdst_sum:LeavePaternityLeave`)
+
+# MODEL 2: Home Time Percent - Main effect and TOTAL (zoi + coi) effects
+model2_mother_distance <- HPer1$`bsp_LeaveMaternityLeave:mod_epdst_sum` + HPer1$`bsp_LeaveMaternityLeave:mod_epdst_sum:RoleMother`
+model2_father_distance <- HPer1$`bsp_LeavePaternityLeave:mod_epdst_sum`
+model2_mother_hurdle <- exp(HPer1$`bsp_zoi_LeaveMaternityLeave:mod_epdst_sum` + HPer1$`bsp_zoi_LeaveMaternityLeave:mod_epdst_sum:RoleMother` + 
+                           HPer1$`bsp_coi_LeaveMaternityLeave:mod_epdst_sum` + HPer1$`bsp_coi_LeaveMaternityLeave:mod_epdst_sum:RoleMother`)
+model2_father_hurdle <- exp(HPer1$`bsp_zoi_LeavePaternityLeave:mod_epdst_sum` + HPer1$`bsp_coi_LeavePaternityLeave:mod_epdst_sum`)
+
+# MODEL 3: Location Variance - Distance and Hurdle effects
+model3_mother_distance <- LocVar1$`bsp_RoleMother:mod_epdst_sum`
+model3_father_distance <- LocVar1$`bsp_RoleFather:mod_epdst_sum` + LocVar1$`bsp_RoleFather:mod_epdst_sum:LeavePaternityLeave`
+model3_mother_hurdle <- exp(LocVar1$`bsp_hu_RoleMother:mod_epdst_sum`)
+model3_father_hurdle <- exp(LocVar1$`bsp_hu_RoleFather:mod_epdst_sum` + LocVar1$`bsp_hu_RoleFather:mod_epdst_sum:LeavePaternityLeave`)
+
+model1_data <- data.frame(
+  model = "Max Distance",
+  mother_distance = model1_mother_distance,
+  father_distance = model1_father_distance,
+  mother_hurdle = model1_mother_hurdle,
+  father_hurdle = model1_father_hurdle
+)
+
+# Model 2 data
+model2_data <- data.frame(
+  model = "Home Time %",
+  mother_distance = model2_mother_distance,
+  father_distance = model2_father_distance,
+  mother_hurdle = model2_mother_hurdle,
+  father_hurdle = model2_father_hurdle
+)
+
+# Model 3 data
+model3_data <- data.frame(
+  model = "Location Variance",
+  mother_distance = model3_mother_distance,
+  father_distance = model3_father_distance,
+  mother_hurdle = model3_mother_hurdle,
+  father_hurdle = model3_father_hurdle
+)
+
+all_model_data <- rbind(model1_data, model2_data, model3_data)
+
+distance_data <- all_model_data %>%
+  select(model, mother_distance, father_distance) %>%
+  pivot_longer(cols = c(mother_distance, father_distance),
+               names_to = "effect_type", values_to = "effect_size") %>%
+  filter(!is.na(effect_size)) %>%
+  mutate(
+    role = ifelse(effect_type == "mother_distance", "Mother", "Father"),
+    parameter_type = "Distance Effect"
+  )
+
+hurdle_data <- all_model_data %>%
+  select(model, mother_hurdle, father_hurdle) %>%
+  pivot_longer(cols = c(mother_hurdle, father_hurdle),
+               names_to = "effect_type", values_to = "effect_size") %>%
+  filter(!is.na(effect_size)) %>%
+  mutate(
+    role = ifelse(effect_type == "mother_hurdle", "Mother", "Father"),
+    parameter_type = "Hurdle Effect (OR)"
+  )
+
+distance_summary_detailed <- distance_data %>%
+  group_by(model, role) %>%
+  summarise(
+    median = median(effect_size, na.rm = TRUE),
+    mean = mean(effect_size, na.rm = TRUE),
+    ci_lower_50 = quantile(effect_size, 0.25, na.rm = TRUE),
+    ci_upper_50 = quantile(effect_size, 0.75, na.rm = TRUE),
+    ci_lower_80 = quantile(effect_size, 0.10, na.rm = TRUE),
+    ci_upper_80 = quantile(effect_size, 0.90, na.rm = TRUE),
+    ci_lower_95 = quantile(effect_size, 0.025, na.rm = TRUE),
+    ci_upper_95 = quantile(effect_size, 0.975, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(model_role = paste0(model, " (", role, ")"))
+
+hurdle_summary_detailed <- hurdle_data %>%
+  group_by(model, role) %>%
+  summarise(
+    median = median(effect_size, na.rm = TRUE),
+    mean = mean(effect_size, na.rm = TRUE),
+    ci_lower_50 = quantile(effect_size, 0.25, na.rm = TRUE),
+    ci_upper_50 = quantile(effect_size, 0.75, na.rm = TRUE),
+    ci_lower_80 = quantile(effect_size, 0.10, na.rm = TRUE),
+    ci_upper_80 = quantile(effect_size, 0.90, na.rm = TRUE),
+    ci_lower_95 = quantile(effect_size, 0.025, na.rm = TRUE),
+    ci_upper_95 = quantile(effect_size, 0.975, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(model_role = paste0(model, " (", role, ")"))
+
+distance_summary <- distance_data %>%
+  group_by(model, role) %>%
+  summarise(
+    median_effect = median(effect_size, na.rm = TRUE),
+    ci_lower = quantile(effect_size, 0.025, na.rm = TRUE),
+    ci_upper = quantile(effect_size, 0.975, na.rm = TRUE),
+    prob_negative = mean(effect_size < 0, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(model, role)
+
+hurdle_summary <- hurdle_data %>%
+  group_by(model, role) %>%
+  summarise(
+    median_or = median(effect_size, na.rm = TRUE),
+    ci_lower = quantile(effect_size, 0.025, na.rm = TRUE),
+    ci_upper = quantile(effect_size, 0.975, na.rm = TRUE),
+    prob_increase_staying = mean(effect_size > 1, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(model, role)
+
+MainEffectsPlot <- ggplot() +
+  geom_density_ridges(aes(x = effect_size, y = model, fill = role), 
+                      alpha = 0.8, scale = 0.5, rel_min_height = 0.015, bandwidth = 0.028,
+                      data = distance_data) +
+  geom_segment(aes(x = ci_lower_95, xend = ci_upper_95, 
+                   y = as.numeric(as.factor(model)) + ifelse(role == "Mother", -0.05, 0.05) - 0.15, 
+                   yend = as.numeric(as.factor(model)) + ifelse(role == "Mother", -0.05, 0.05) - 0.15, 
+                   color = role), 
+               size = 1, alpha = 0.8, data = distance_summary_detailed) +
+  geom_segment(aes(x = ci_lower_80, xend = ci_upper_80, 
+                   y = as.numeric(as.factor(model)) + ifelse(role == "Mother", -0.05, 0.05) - 0.15, 
+                   yend = as.numeric(as.factor(model)) + ifelse(role == "Mother", -0.05, 0.05) - 0.15,
+                   color = role),  
+               size = 2, alpha = 0.8, data = distance_summary_detailed) +
+  geom_segment(aes(x = ci_lower_50, xend = ci_upper_50, 
+                   y = as.numeric(as.factor(model)) + ifelse(role == "Mother", -0.05, 0.05) - 0.15, 
+                   yend = as.numeric(as.factor(model)) + ifelse(role == "Mother", -0.05, 0.05) - 0.15, 
+                   color = role),  
+               size = 3, data = distance_summary_detailed) +
+  geom_point(aes(x = median,
+                 y = as.numeric(as.factor(model)) + ifelse(role == "Mother", -0.05, 0.05) - 0.15, color = role), size = 3, color = "black", stroke = 1.5, data = distance_summary_detailed) +
+  geom_point(aes(x = median, y = as.numeric(as.factor(model)) + ifelse(role == "Mother", -0.05, 0.05) - 0.15, color = role), size = 2, data = distance_summary_detailed) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "black", size = 1) +
+  scale_color_okabe_ito() +
+  scale_fill_okabe_ito() +
+  labs(x = "Change Per Depression Point", y = "", title = "B) Mobility Response to Depression Symptoms", fill = "Role") +
+  guides(color = "none") +
+  xlim(c(-0.5, 0.35)) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 20, face = "bold"),
+    axis.text.x = element_text(size = 15, color = "black"),
+    axis.title.x = element_text(size = 15, color = "black"),
+    axis.text.y = element_text(size = 15, color = "black"),
+    axis.title.y = element_text(size = 15, color = "black"),
+    legend.title = element_blank(),
+    legend.position = "none",
+    legend.key.size = unit(1, "lines"),
+    legend.text = element_text(size = 15),
+    legend.background = element_rect(fill = "transparent", color = NA),
+    legend.key = element_rect(fill = "transparent", color = NA),
+    panel.border = element_blank(),
+    strip.background = element_rect(color="white", fill="white", linewidth=1.5, linetype="solid"),
+    strip.text.x = element_text(size = 20, color = "black"),
+    panel.spacing = unit(2, "lines"),
+    panel.grid.minor.x = element_blank(),
+    plot.margin = margin(t = 0.1,
+                             r = 0.1,
+                             b = 0.1,
+                             l = 0.1,
+                             unit = "cm"))
+
+HurdlePlot <- ggplot() +
+  geom_density_ridges(aes(x = effect_size, y = model, fill = role), 
+                      alpha = 0.8, scale = 0.5, rel_min_height = 0.015, bandwidth = 0.05,
+                      data = hurdle_data) +
+  geom_segment(aes(x = ci_lower_95, xend = ci_upper_95, 
+                   y = as.numeric(as.factor(model)) + ifelse(role == "Mother", -0.05, 0.05) - 0.15, 
+                   yend = as.numeric(as.factor(model)) + ifelse(role == "Mother", -0.05, 0.05) - 0.15, 
+                   color = role), 
+               size = 1, alpha = 0.8, data = hurdle_summary_detailed) +
+  geom_segment(aes(x = ci_lower_80, xend = ci_upper_80, 
+                   y = as.numeric(as.factor(model)) + ifelse(role == "Mother", -0.05, 0.05) - 0.15, 
+                   yend = as.numeric(as.factor(model)) + ifelse(role == "Mother", -0.05, 0.05) - 0.15,
+                   color = role),  
+               size = 2, alpha = 0.8, data = hurdle_summary_detailed) +
+  geom_segment(aes(x = ci_lower_50, xend = ci_upper_50, 
+                   y = as.numeric(as.factor(model)) + ifelse(role == "Mother", -0.05, 0.05) - 0.15, 
+                   yend = as.numeric(as.factor(model)) + ifelse(role == "Mother", -0.05, 0.05) - 0.15, 
+                   color = role),  
+               size = 3, data = hurdle_summary_detailed) +
+  geom_point(aes(x = median,
+                 y = as.numeric(as.factor(model)) + ifelse(role == "Mother", -0.05, 0.05) - 0.15,
+                 color = role), 
+             size = 3, color = "black", stroke = 1.5, data = hurdle_summary_detailed) +
+  geom_point(aes(x = median,
+                 y = as.numeric(as.factor(model)) + ifelse(role == "Mother", -0.05, 0.05) - 0.15,
+                 color = role), 
+             size = 2, data = hurdle_summary_detailed) +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "black", size = 1) +
+  scale_color_okabe_ito() +
+  scale_fill_okabe_ito() +
+  labs(x = "Odds Ratio Per Depression Point", 
+       y = "", 
+       title = "C) Odds of Staying Home by Depression Level", 
+       fill = "Role") +
+  guides(color = "none") +
+  xlim(c(0.5, 2.5)) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 20, face = "bold"),
+    axis.text.x = element_text(size = 15, color = "black"),
+    axis.title.x = element_text(size = 15, color = "black"),
+    axis.text.y = element_blank(),
+    axis.title.y = element_blank(),
+    legend.title = element_blank(),
+    legend.position = c(0.8, 0.8),
+    legend.key.size = unit(2, "lines"),
+    legend.text = element_text(size = 18),
+    legend.background = element_rect(fill = "transparent", color = NA),
+    legend.key = element_rect(fill = "transparent", color = NA),
+    panel.border = element_blank(),
+    strip.background = element_rect(color="white", fill="white", linewidth=1.5, linetype="solid"),
+    strip.text.x = element_text(size = 20, color = "black"),
+    panel.spacing = unit(2, "lines"),
+    panel.grid.minor.x = element_blank(),
+    plot.margin = margin(t = 0.1,
+                             r = 0.1,
+                             b = 0.1, 
+                             l = 0.1, 
+                             unit = "cm"))
+
+ChangeForDepression <- plot_grid(MainEffectsPlot, NULL, HurdlePlot, ncol = 3, rel_widths = c(0.5, 0.02, 0.5))
+DepressionPlots <- plot_grid(HomeTimePlot, NULL, ChangeForDepression, nrow = 3, rel_heights = c(0.5, 0.1, 0.5))
+
+#ggsave(plot = DepressionPlots, file = here("analysis_code", "QuickPlots", "FiguresForPaper", "DepressionPlots.pdf"), height = 14, width = 15)
+```
+
+## Extract Statistics for Depression
+
+```{r}
+# Calculate Evidence Ratios for Depression Effects on Mobility
+
+# MODEL 1: Max Distance
+model1_results <- list(
+  mother_distance = calculate_evidence_ratio(model1_mother_distance, 0, "less"),
+  father_distance = calculate_evidence_ratio(model1_father_distance, 0, "less"),
+  mother_hurdle = calculate_evidence_ratio(model1_mother_hurdle, 1, "greater"),
+  father_hurdle = calculate_evidence_ratio(model1_father_hurdle, 1, "greater")
+)
+
+# MODEL 2: Home Time Percent
+model2_results <- list(
+  mother_distance = calculate_evidence_ratio(model2_mother_distance, 0, "greater"),
+  father_distance = calculate_evidence_ratio(model2_father_distance, 0, "greater"),
+  mother_hurdle = calculate_evidence_ratio(model2_mother_hurdle, 1, "greater"),
+  father_hurdle = calculate_evidence_ratio(model2_father_hurdle, 1, "greater")
+)
+
+# MODEL 3: Location Variance
+model3_results <- list(
+  mother_distance = calculate_evidence_ratio(model3_mother_distance, 0, "less"),
+  father_distance = calculate_evidence_ratio(model3_father_distance, 0, "less"),
+  mother_hurdle = calculate_evidence_ratio(model3_mother_hurdle, 1, "greater"),
+  father_hurdle = calculate_evidence_ratio(model3_father_hurdle, 1, "greater")
+)
+
+# MOTHER VS FATHER COMPARISONS
+
+# MODEL 1: Max Distance - Mother vs Father comparisons
+model1_comparisons <- list(
+  distance_diff = calculate_difference_evidence_ratio(model1_mother_distance, model1_father_distance, 0, "less"), # mothers more negative?
+  hurdle_ratio = calculate_difference_evidence_ratio(log(model1_mother_hurdle), log(model1_father_hurdle), 0, "less") # mothers higher odds?
+)
+
+# MODEL 2: Home Time Percent - Mother vs Father comparisons  
+model2_comparisons <- list(
+  distance_diff = calculate_difference_evidence_ratio(model2_mother_distance, model2_father_distance, 0, "greater"), # mothers more positive?
+  hurdle_ratio = calculate_difference_evidence_ratio(log(model2_mother_hurdle), log(model2_father_hurdle), 0, "greater") # mothers higher odds?
+)
+
+# MODEL 3: Location Variance - Mother vs Father comparisons
+model3_comparisons <- list(
+  distance_diff = calculate_difference_evidence_ratio(model3_mother_distance, model3_father_distance, 0, "less"), # mothers more negative?
+  hurdle_ratio = calculate_difference_evidence_ratio(log(model3_mother_hurdle), log(model3_father_hurdle), 0, "greater") # mothers higher odds?
+)
+
+depression_hypothesis_results <- tibble(
+  # MODEL 1: Max Distance - Individual Effects
+  Test = c("Mother_MaxDist_Decrease", "Father_MaxDist_Decrease", 
+           "Mother_MaxDist_StayHome", "Father_MaxDist_StayHome",
+           # MODEL 2: Home Time - Individual Effects  
+           "Mother_HomeTime_Increase", "Father_HomeTime_Increase",
+           "Mother_HomeTime_CompleteStay", "Father_HomeTime_CompleteStay",
+           # MODEL 3: Location Variance - Individual Effects
+           "Mother_LocVar_Decrease", "Father_LocVar_Decrease",
+           "Mother_LocVar_StayHome", "Father_LocVar_StayHome",
+           # MODEL 1: Max Distance - Mother vs Father Comparisons
+           "MotherVsFather_MaxDist_GreaterDecrease", "MotherVsFather_MaxDist_SmallerStayOdds",
+           # MODEL 2: Home Time - Mother vs Father Comparisons
+           "MotherVsFather_HomeTime_GreaterIncrease", "MotherVsFather_HomeTime_HigherStayOdds", 
+           # MODEL 3: Location Variance - Mother vs Father Comparisons
+           "MotherVsFather_LocVar_GreaterDecrease", "MotherVsFather_LocVar_HigherStayOdds"),
+  
+  # Extract median estimates (you'll need to calculate these from your posterior draws)
+  Estimate = c(
+    # Model 1 estimates - replace with actual medians
+    median(model1_mother_distance), median(model1_father_distance),
+    median(model1_mother_hurdle), median(model1_father_hurdle),
+    # Model 2 estimates
+    median(model2_mother_distance), median(model2_father_distance), 
+    median(model2_mother_hurdle), median(model2_father_hurdle),
+    # Model 3 estimates
+    median(model3_mother_distance), median(model3_father_distance),
+    median(model3_mother_hurdle), median(model3_father_hurdle),
+    # Comparison estimates (differences)
+    median(model1_mother_distance - model1_father_distance),
+    median(log(model1_mother_hurdle) - log(model1_father_hurdle)),
+    median(model2_mother_distance - model2_father_distance),
+    median(log(model2_mother_hurdle) - log(model2_father_hurdle)),
+    median(model3_mother_distance - model3_father_distance),
+    median(log(model3_mother_hurdle) - log(model3_father_hurdle))
+  ),
+  
+  # Calculate 95% credible intervals
+  CI_Lower = c(
+    # Model 1 CIs - replace with actual quantiles
+    quantile(model1_mother_distance, 0.025), quantile(model1_father_distance, 0.025),
+    quantile(model1_mother_hurdle, 0.025), quantile(model1_father_hurdle, 0.025),
+    # Model 2 CIs
+    quantile(model2_mother_distance, 0.025), quantile(model2_father_distance, 0.025),
+    quantile(model2_mother_hurdle, 0.025), quantile(model2_father_hurdle, 0.025),
+    # Model 3 CIs
+    quantile(model3_mother_distance, 0.025), quantile(model3_father_distance, 0.025),
+    quantile(model3_mother_hurdle, 0.025), quantile(model3_father_hurdle, 0.025),
+    # Comparison CIs
+    quantile(model1_mother_distance - model1_father_distance, 0.025),
+    quantile(log(model1_mother_hurdle) - log(model1_father_hurdle), 0.025),
+    quantile(model2_mother_distance - model2_father_distance, 0.025),
+    quantile(log(model2_mother_hurdle) - log(model2_father_hurdle), 0.025),
+    quantile(model3_mother_distance - model3_father_distance, 0.025),
+    quantile(log(model3_mother_hurdle) - log(model3_father_hurdle), 0.025)
+  ),
+  
+  CI_Upper = c(
+    # Model 1 CIs - replace with actual quantiles
+    quantile(model1_mother_distance, 0.975), quantile(model1_father_distance, 0.975),
+    quantile(model1_mother_hurdle, 0.975), quantile(model1_father_hurdle, 0.975),
+    # Model 2 CIs
+    quantile(model2_mother_distance, 0.975), quantile(model2_father_distance, 0.975),
+    quantile(model2_mother_hurdle, 0.975), quantile(model2_father_hurdle, 0.975),
+    # Model 3 CIs
+    quantile(model3_mother_distance, 0.975), quantile(model3_father_distance, 0.975),
+    quantile(model3_mother_hurdle, 0.975), quantile(model3_father_hurdle, 0.975),
+    # Comparison CIs
+    quantile(model1_mother_distance - model1_father_distance, 0.975),
+    quantile(log(model1_mother_hurdle) - log(model1_father_hurdle), 0.975),
+    quantile(model2_mother_distance - model2_father_distance, 0.975),
+    quantile(log(model2_mother_hurdle) - log(model2_father_hurdle), 0.975),
+    quantile(model3_mother_distance - model3_father_distance, 0.975),
+    quantile(log(model3_mother_hurdle) - log(model3_father_hurdle), 0.975)
+  ),
+  
+  # Extract evidence ratios from your calculated results
+  EvidenceRatio = c(
+    model1_results$mother_distance$evidence_ratio, model1_results$father_distance$evidence_ratio,
+    model1_results$mother_hurdle$evidence_ratio, model1_results$father_hurdle$evidence_ratio,
+    model2_results$mother_distance$evidence_ratio, model2_results$father_distance$evidence_ratio,
+    model2_results$mother_hurdle$evidence_ratio, model2_results$father_hurdle$evidence_ratio,
+    model3_results$mother_distance$evidence_ratio, model3_results$father_distance$evidence_ratio,
+    model3_results$mother_hurdle$evidence_ratio, model3_results$father_hurdle$evidence_ratio,
+    model1_comparisons$distance_diff$evidence_ratio, model1_comparisons$hurdle_ratio$evidence_ratio,
+    model2_comparisons$distance_diff$evidence_ratio, model2_comparisons$hurdle_ratio$evidence_ratio,
+    model3_comparisons$distance_diff$evidence_ratio, model3_comparisons$hurdle_ratio$evidence_ratio
+  ),
+  
+  # Extract posterior probabilities
+  PostProb = c(
+    model1_results$mother_distance$probability, model1_results$father_distance$probability,
+    model1_results$mother_hurdle$probability, model1_results$father_hurdle$probability,
+    model2_results$mother_distance$probability, model2_results$father_distance$probability,
+    model2_results$mother_hurdle$probability, model2_results$father_hurdle$probability,
+    model3_results$mother_distance$probability, model3_results$father_distance$probability,
+    model3_results$mother_hurdle$probability, model3_results$father_hurdle$probability,
+    model1_comparisons$distance_diff$probability, model1_comparisons$hurdle_ratio$probability,
+    model2_comparisons$distance_diff$probability, model2_comparisons$hurdle_ratio$probability,
+    model3_comparisons$distance_diff$probability, model3_comparisons$hurdle_ratio$probability
+  )
+) %>%
+  mutate(
+    # Round all numeric values
+    Estimate = round(Estimate, 2),
+    CI_Lower = round(CI_Lower, 2), 
+    CI_Upper = round(CI_Upper, 2),
+    EvidenceRatio = round(EvidenceRatio, 1),
+    PostProb = round(PostProb, 2),
+    # Create odds ratios for hurdle effects
+    OddsRatio = ifelse(grepl("StayHome|Stay", Test), round(exp(Estimate), 2), NA),
+    OR_CI_Lower = ifelse(grepl("StayHome|Stay", Test), round(exp(CI_Lower), 2), NA),
+    OR_CI_Upper = ifelse(grepl("StayHome|Stay", Test), round(exp(CI_Upper), 2), NA)
+  )
+
+depression_stats <- depression_hypothesis_results %>%
+  select(TestDescription = Test, Estimate, CI_Lower, CI_Upper, Evid.Ratio = EvidenceRatio, Post.Prob = PostProb) %>%
+  mutate(
+    Evid.Ratio = sprintf("%.1f", Evid.Ratio)
+  )
+
+# Create the summary stats table for wide format
+depression_summary_stats <- depression_hypothesis_results %>%
+  pivot_longer(cols = c(Estimate, CI_Lower, CI_Upper, EvidenceRatio, PostProb, OddsRatio, OR_CI_Lower, OR_CI_Upper), 
+               names_to = "Metric", values_to = "Value") %>%
+  unite("Statistic", Test, Metric, sep = "_") %>%
+  select(Statistic, Value) %>%
+  filter(!is.na(Value)) %>%
+  mutate(Value = round(Value, 3))
+
+# Save to CSV files 
+write.csv(depression_summary_stats, here("analysis_code", "StatsForBodyText", "depressionspatial_summary.csv"), row.names = FALSE)
+```
+
+
+
+# Home Time Percentage and Sleep Quality
+
+## Home Time and Sleep Quality
+
+```{r}
+newdata <- d_GPS %>%
+  group_by(ParticipantID, Role, Leave, SleepQuality) %>%
+  summarise(n = n()) %>%
+  mutate(d_epdst_sum = median(as.numeric(d_GPS$d_epdst_sum))) %>%
+  filter(SleepQuality %in% c('1', '2', '3', '4', '5')) %>%
+  mutate(SleepQuality = factor(SleepQuality, levels = c('1', '2', '3', '4', '5'))) %>%
+  mutate(SleepQuality = as.ordered(SleepQuality)) %>%
+  print(n = 50)
+
+pred_data <- add_predicted_draws(modelHomeTimePercent, newdata = newdata, allow_new_levels = T)
+
+pred_data_subj <- pred_data %>%
+  group_by(Leave, d_epdst_sum, Role, ParticipantID) %>%
+  summarise(mean = mean(.prediction) * 100)
+
+pred_data_subj <- pred_data %>%
+  group_by(Leave, SleepQuality, Role, ParticipantID) %>%
+  summarise(mean = mean(.prediction) * 100) %>%
+  mutate(SleepQuality_factor = factor(SleepQuality, levels = 1:5, 
+                                  labels = c("V. Poor", "Poor", "Fair", "Good", "V. Good")))
+
+weekday_data <- pred_data_subj %>%
+  mutate(OnLeave = case_when(
+    Leave == "Paternity Leave" & Role == "Father" ~ "On Leave",
+    Leave == "Maternity Leave" & Role == "Mother" ~ "On Leave",
+    Leave == "Paternity Leave" & Role == "Mother" ~ "Not On Leave",
+    Leave == "Maternity Leave" & Role == "Father" ~ "Not On Leave",
+  ))
+
+newdata_grid <- expand_grid(
+  Role = c("Father", "Mother"),
+  Leave = c("Maternity Leave", "Paternity Leave"),
+  d_epdst_sum = c(5), 
+  SleepQuality = c(1, 2, 3, 4, 5),
+  ParticipantID = NA
+)
+
+predictions <- modelHomeTimePercent %>%
+  epred_draws(newdata = newdata_grid, re_formula = NA) %>%
+  ungroup()
+
+predictions_summary <- predictions %>%
+  group_by(Role, Leave, SleepQuality) %>%
+  summarise(
+    mean_home_time = mean(.epred),
+    ci_lower_80 = quantile(.epred, 0.055),
+    ci_upper_80 = quantile(.epred, 0.945),
+    ci_lower_95 = quantile(.epred, 0.975),
+    ci_upper_95 = quantile(.epred, 0.025),
+    .groups = "drop"
+  ) %>%
+  arrange(Role, Leave, SleepQuality) %>%
+  mutate(OnLeave = case_when(
+    Leave == "Paternity Leave" & Role == "Father" ~ "On Leave",
+    Leave == "Maternity Leave" & Role == "Mother" ~ "On Leave",
+    Leave == "Paternity Leave" & Role == "Mother" ~ "Not On Leave",
+    Leave == "Maternity Leave" & Role == "Father" ~ "Not On Leave",
+  ),
+  SleepQuality_factor = factor(SleepQuality, levels = 1:5, 
+                                  labels = c("V. Poor", "Poor", "Fair", "Good", "V. Good")))
+  
+HomeTimeSleepPlot <- ggplot() +
+  geom_smooth(aes(x = SleepQuality, y = mean_home_time * 100, color = Role), se = F, formula = y ~ splines::ns(x, df = 3), method = "lm", data = filter(predictions_summary, OnLeave == "On Leave")) +
+  geom_smooth(aes(x = SleepQuality, y = ci_lower_80 * 100, color = Role), se = F, formula = y ~ splines::ns(x, df = 3), method = "lm", linetype = "dashed", data = filter(predictions_summary, OnLeave == "On Leave")) +
+  geom_smooth(aes(x = SleepQuality, y = ci_upper_80 * 100, color = Role), se = F, formula = y ~ splines::ns(x, df = 3), method = "lm", linetype = "dashed", data = filter(predictions_summary, OnLeave == "On Leave")) +
+  geom_point(alpha = 0.9, size = 3, position = position_jitter(width = 0.1), aes(x = as.numeric(SleepQuality), y = mean, color = Role, fill = Role), data = filter(weekday_data, OnLeave == "On Leave")) +
+  facet_wrap(~Role, ncol = 2) +
+  scale_y_continuous(breaks = seq(0, 100, 20), limit = c(0, 100)) +
+  scale_x_continuous(breaks = seq(1, 5, 1), limit = c(0, 5), labels = c("V. Poor", "Poor", "Fair", "Good", "V. Good")) +
+  scale_color_okabe_ito() +
+  scale_fill_okabe_ito() +
+  labs(x = "Reported Sleep Quality", y = "Predicted Home Time (%)") +
+  ggtitle('A) Home Time by Daily Sleep Quality') +
+  theme_minimal() +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 20, color = "black", hjust = 0.5, face = "bold"),
+    axis.text.x = element_text(size = 15, color = "black"),
+    axis.title.x = element_text(size = 15, color = "black"),
+    axis.text.y = element_text(size = 15, color = "black"),
+    axis.title.y = element_text(size = 15, color = "black"),
+    legend.title = element_blank(),
+    legend.position = "none",
+    legend.key.size = unit(1, "lines"),
+    legend.text = element_text(size = 15),
+    legend.background = element_rect(fill = "transparent", color = NA),
+    legend.key = element_rect(fill = "transparent", color = NA),
+    panel.border = element_blank(),
+    strip.background = element_rect(color="white", fill="white", linewidth=1.5, linetype="solid"),
+    strip.text.x = element_text(size = 20, color = "black"),
+    panel.spacing = unit(3, "lines"),
+    #panel.grid.major.x= element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    plot.margin = margin(t = 0.1, 
+                             r = 0.1,
+                             b = 0.1,
+                             l = 0.1,
+                             unit = "cm"))
+```
+
+## Posterior Predictions Plot, Sleep
+
+```{r}
+maxdist2 <- as_draws_df(modelmaxdistance)
+HPer2 <- as_draws_df(modelHomeTimePercent)
+LocVar2 <- as_draws_df(modellocationvariance)
+
+# MODEL 1: Max Distance - Distance and Hurdle effects
+model1_mother_distance <- maxdist2$`bsp_RoleMother:moSleepQuality`
+model1_father_distance <- maxdist2$`bsp_RoleFather:moSleepQuality` + maxdist2$`bsp_RoleFather:moSleepQuality:LeavePaternityLeave`
+model1_mother_hurdle <- exp(maxdist2$`bsp_hu_RoleMother:moSleepQuality`)
+model1_father_hurdle <- exp(maxdist2$`bsp_hu_RoleFather:moSleepQuality` + maxdist2$`bsp_hu_RoleFather:moSleepQuality:LeavePaternityLeave`)
+
+# MODEL 2: Home Time Percent - Main effect and COI (complete inflation) effects
+model2_mother_distance <- HPer2$`bsp_LeaveMaternityLeave:moSleepQuality:RoleMother`
+model2_father_distance <- HPer2$`bsp_LeavePaternityLeave:moSleepQuality`
+model2_mother_hurdle <- exp(HPer2$`bsp_coi_LeaveMaternityLeave:moSleepQuality` + HPer2$`bsp_coi_LeaveMaternityLeave:moSleepQuality:RoleMother`)
+model2_father_hurdle <- exp(HPer2$`bsp_coi_LeavePaternityLeave:moSleepQuality`)
+
+# MODEL 2: Home Time Percent - Main effect and TOTAL (zoi + coi) effects
+model2_mother_distance <- HPer2$`bsp_LeaveMaternityLeave:moSleepQuality` + HPer2$`bsp_LeaveMaternityLeave:moSleepQuality:RoleMother`
+model2_father_distance <- HPer2$`bsp_LeavePaternityLeave:moSleepQuality`
+model2_mother_hurdle <- exp(HPer2$`bsp_zoi_LeaveMaternityLeave:moSleepQuality` + HPer2$`bsp_zoi_LeaveMaternityLeave:moSleepQuality:RoleMother` + 
+                           HPer2$`bsp_coi_LeaveMaternityLeave:moSleepQuality` + HPer2$`bsp_coi_LeaveMaternityLeave:moSleepQuality:RoleMother`)
+model2_father_hurdle <- exp(HPer2$`bsp_zoi_LeavePaternityLeave:moSleepQuality` + HPer2$`bsp_coi_LeavePaternityLeave:moSleepQuality`)
+
+# MODEL 3: Location Variance - Distance and Hurdle effects
+model3_mother_distance <- LocVar2$`bsp_RoleMother:moSleepQuality`
+model3_father_distance <- LocVar2$`bsp_RoleFather:moSleepQuality` + LocVar2$`bsp_RoleFather:moSleepQuality:LeavePaternityLeave`
+model3_mother_hurdle <- exp(LocVar2$`bsp_hu_RoleMother:moSleepQuality`)
+model3_father_hurdle <- exp(LocVar2$`bsp_hu_RoleFather:moSleepQuality` + LocVar2$`bsp_hu_RoleFather:moSleepQuality:LeavePaternityLeave`)
+
+# Model 1 data
+model1_data <- data.frame(
+  model = "Max Distance",
+  mother_distance = model1_mother_distance,
+  father_distance = model1_father_distance,
+  mother_hurdle = model1_mother_hurdle,
+  father_hurdle = model1_father_hurdle
+)
+
+# Model 2 data
+model2_data <- data.frame(
+  model = "Home Time %",
+  mother_distance = model2_mother_distance,
+  father_distance = model2_father_distance,
+  mother_hurdle = model2_mother_hurdle,
+  father_hurdle = model2_father_hurdle
+)
+
+# Model 3 data
+model3_data <- data.frame(
+  model = "Location Variance",
+  mother_distance = model3_mother_distance,
+  father_distance = model3_father_distance,
+  mother_hurdle = model3_mother_hurdle,
+  father_hurdle = model3_father_hurdle
+)
+
+all_model_data <- rbind(model1_data, model2_data, model3_data)
+
+distance_data <- all_model_data %>%
+  select(model, mother_distance, father_distance) %>%
+  pivot_longer(cols = c(mother_distance, father_distance),
+               names_to = "effect_type", values_to = "effect_size") %>%
+  filter(!is.na(effect_size)) %>%
+  mutate(
+    role = ifelse(effect_type == "mother_distance", "Mother", "Father"),
+    parameter_type = "Distance Effect"
+  )
+
+hurdle_data <- all_model_data %>%
+  select(model, mother_hurdle, father_hurdle) %>%
+  pivot_longer(cols = c(mother_hurdle, father_hurdle),
+               names_to = "effect_type", values_to = "effect_size") %>%
+  filter(!is.na(effect_size)) %>%
+  mutate(
+    role = ifelse(effect_type == "mother_hurdle", "Mother", "Father"),
+    parameter_type = "Hurdle Effect (OR)"
+  )
+
+distance_summary_detailed <- distance_data %>%
+  group_by(model, role) %>%
+  summarise(
+    median = median(effect_size, na.rm = TRUE),
+    mean = mean(effect_size, na.rm = TRUE),
+    ci_lower_50 = quantile(effect_size, 0.25, na.rm = TRUE),
+    ci_upper_50 = quantile(effect_size, 0.75, na.rm = TRUE),
+    ci_lower_80 = quantile(effect_size, 0.10, na.rm = TRUE),
+    ci_upper_80 = quantile(effect_size, 0.90, na.rm = TRUE),
+    ci_lower_95 = quantile(effect_size, 0.025, na.rm = TRUE),
+    ci_upper_95 = quantile(effect_size, 0.975, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(model_role = paste0(model, " (", role, ")"))
+
+hurdle_summary_detailed <- hurdle_data %>%
+  group_by(model, role) %>%
+  summarise(
+    median = median(effect_size, na.rm = TRUE),
+    mean = mean(effect_size, na.rm = TRUE),
+    ci_lower_50 = quantile(effect_size, 0.25, na.rm = TRUE),
+    ci_upper_50 = quantile(effect_size, 0.75, na.rm = TRUE),
+    ci_lower_80 = quantile(effect_size, 0.10, na.rm = TRUE),
+    ci_upper_80 = quantile(effect_size, 0.90, na.rm = TRUE),
+    ci_lower_95 = quantile(effect_size, 0.025, na.rm = TRUE),
+    ci_upper_95 = quantile(effect_size, 0.975, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(model_role = paste0(model, " (", role, ")"))
+
+distance_summary <- distance_data %>%
+  group_by(model, role) %>%
+  summarise(
+    median_effect = median(effect_size, na.rm = TRUE),
+    ci_lower = quantile(effect_size, 0.025, na.rm = TRUE),
+    ci_upper = quantile(effect_size, 0.975, na.rm = TRUE),
+    prob_negative = mean(effect_size < 0, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(model, role)
+
+hurdle_summary <- hurdle_data %>%
+  group_by(model, role) %>%
+  summarise(
+    median_or = median(effect_size, na.rm = TRUE),
+    ci_lower = quantile(effect_size, 0.025, na.rm = TRUE),
+    ci_upper = quantile(effect_size, 0.975, na.rm = TRUE),
+    prob_increase_staying = mean(effect_size > 1, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(model, role)
+
+MainEffectsPlot <- ggplot() +
+  geom_density_ridges(aes(x = effect_size, y = model, fill = role), 
+                      alpha = 0.8, scale = 0.5, rel_min_height = 0.015, bandwidth = 0.05,
+                      data = distance_data) +
+  geom_segment(aes(x = ci_lower_95, xend = ci_upper_95, 
+                   y = as.numeric(as.factor(model)) + ifelse(role == "Mother", -0.05, 0.05) - 0.15, 
+                   yend = as.numeric(as.factor(model)) + ifelse(role == "Mother", -0.05, 0.05) - 0.15, 
+                   color = role), 
+               size = 1, alpha = 0.8, data = distance_summary_detailed) +
+  geom_segment(aes(x = ci_lower_80, xend = ci_upper_80, 
+                   y = as.numeric(as.factor(model)) + ifelse(role == "Mother", -0.05, 0.05) - 0.15, 
+                   yend = as.numeric(as.factor(model)) + ifelse(role == "Mother", -0.05, 0.05) - 0.15,
+                   color = role),  
+               size = 2, alpha = 0.8, data = distance_summary_detailed) +
+  geom_segment(aes(x = ci_lower_50, xend = ci_upper_50, 
+                   y = as.numeric(as.factor(model)) + ifelse(role == "Mother", -0.05, 0.05) - 0.15, 
+                   yend = as.numeric(as.factor(model)) + ifelse(role == "Mother", -0.05, 0.05) - 0.15, 
+                   color = role),  
+               size = 3, data = distance_summary_detailed) +
+  geom_point(aes(x = median,
+                 y = as.numeric(as.factor(model)) + ifelse(role == "Mother", -0.05, 0.05) - 0.15,
+                 color = role), 
+             size = 3, color = "black", stroke = 1.5, data = distance_summary_detailed) +
+  geom_point(aes(x = median,
+                 y = as.numeric(as.factor(model)) + ifelse(role == "Mother", -0.05, 0.05) - 0.15,
+                 color = role), 
+             size = 2, data = distance_summary_detailed) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "black", size = 1) +
+  scale_color_okabe_ito() +
+  scale_fill_okabe_ito() +
+  labs(x = "Change Per Sleep Category", 
+       y = "", 
+       title = "B) Mobility Response to Sleep Quality", 
+       fill = "Role") +
+  
+  guides(color = "none") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 20, face = "bold"),
+    axis.text.x = element_text(size = 15, color = "black"),
+    axis.title.x = element_text(size = 15, color = "black"),
+    axis.text.y = element_text(size = 15, color = "black"),
+    axis.title.y = element_text(size = 15, color = "black"),
+    legend.title = element_blank(),
+    legend.position = "none",
+    legend.key.size = unit(1, "lines"),
+    legend.text = element_text(size = 15),
+    legend.background = element_rect(fill = "transparent", color = NA),
+    legend.key = element_rect(fill = "transparent", color = NA),
+    panel.border = element_blank(),
+    strip.background = element_rect(color="white", fill="white", linewidth=1.5, linetype="solid"),
+    strip.text.x = element_text(size = 20, color = "black"),
+    panel.spacing = unit(2, "lines"),
+    #panel.grid.major.x= element_blank(),
+    panel.grid.minor.x = element_blank(),
+    plot.margin = margin(t = 0.1,
+                             r = 0.1, 
+                             b = 0.1,
+                             l = 0.1,
+                             unit = "cm"))
+
+HurdlePlot <- ggplot() +
+  geom_density_ridges(aes(x = effect_size, y = model, fill = role), 
+                      alpha = 0.8, scale = 0.5, rel_min_height = 0.015, bandwidth = 0.07,
+                      data = hurdle_data) +
+  geom_segment(aes(x = ci_lower_95, xend = ci_upper_95, 
+                   y = as.numeric(as.factor(model)) + ifelse(role == "Mother", -0.05, 0.05) - 0.15, 
+                   yend = as.numeric(as.factor(model)) + ifelse(role == "Mother", -0.05, 0.05) - 0.15, 
+                   color = role), 
+               size = 1, alpha = 0.8, data = hurdle_summary_detailed) +
+  geom_segment(aes(x = ci_lower_80, xend = ci_upper_80, 
+                   y = as.numeric(as.factor(model)) + ifelse(role == "Mother", -0.05, 0.05) - 0.15, 
+                   yend = as.numeric(as.factor(model)) + ifelse(role == "Mother", -0.05, 0.05) - 0.15,
+                   color = role),  
+               size = 2, alpha = 0.8, data = hurdle_summary_detailed) +
+  geom_segment(aes(x = ci_lower_50, xend = ci_upper_50, 
+                   y = as.numeric(as.factor(model)) + ifelse(role == "Mother", -0.05, 0.05) - 0.15, 
+                   yend = as.numeric(as.factor(model)) + ifelse(role == "Mother", -0.05, 0.05) - 0.15, 
+                   color = role),  
+               size = 3, data = hurdle_summary_detailed) +
+  geom_point(aes(x = median,
+                 y = as.numeric(as.factor(model)) + ifelse(role == "Mother", -0.05, 0.05) - 0.15,
+                 color = role), 
+             size = 3, color = "black", stroke = 1.5, data = hurdle_summary_detailed) +
+  geom_point(aes(x = median,
+                 y = as.numeric(as.factor(model)) + ifelse(role == "Mother", -0.05, 0.05) - 0.15,
+                 color = role), 
+             size = 2, data = hurdle_summary_detailed) +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "black", size = 1) +
+  scale_color_okabe_ito() +
+  scale_fill_okabe_ito() +
+  labs(x = "Odds Ratio Per Sleep Point", 
+       y = "", 
+       title = "C) Odds of Staying Home by Sleep Quality", 
+       fill = "Role") +
+  
+  guides(color = "none") + 
+  xlim(c(0.2, 3)) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 20, face = "bold"),
+    axis.text.x = element_text(size = 15, color = "black"),
+    axis.title.x = element_text(size = 15, color = "black"),
+    axis.text.y = element_blank(),
+    axis.title.y = element_blank(),
+    legend.title = element_blank(),
+    legend.position = c(0.8, 0.8),
+    legend.key.size = unit(2, "lines"),
+    legend.text = element_text(size = 18),
+    legend.background = element_rect(fill = "transparent", color = NA),
+    legend.key = element_rect(fill = "transparent", color = NA),
+    panel.border = element_blank(),
+    strip.background = element_rect(color="white", fill="white", linewidth=1.5, linetype="solid"),
+    strip.text.x = element_text(size = 20, color = "black"),
+    panel.spacing = unit(2, "lines"),
+    panel.grid.minor.x = element_blank(),
+    plot.margin = margin(t = 0.1,
+                             r = 0.1,
+                             b = 0.1,
+                             l = 0.1,
+                             unit = "cm"))
+
+ChangeForSleep <- plot_grid(MainEffectsPlot, NULL, HurdlePlot, ncol = 3, rel_widths = c(0.5, 0.02, 0.5))
+SleepPlots <- plot_grid(HomeTimeSleepPlot, NULL, ChangeForSleep, nrow = 3, rel_heights = c(0.5, 0.1, 0.5))
+
+ggsave(plot = SleepPlots, file = here("analysis_code", "QuickPlots", "FiguresForPaper", "SleepPlots.pdf"), height = 14, width = 15)
+```
+
+## Extract Statistics for Sleep
+
+```{r}
+# Calculate Evidence Ratios for Sleep Effects on Mobility
+
+# MODEL 1: Max Distance
+model1_results <- list(
+  mother_distance = calculate_evidence_ratio(model1_mother_distance, 0, "greater"),
+  father_distance = calculate_evidence_ratio(model1_father_distance, 0, "less"),
+  mother_hurdle = calculate_evidence_ratio(model1_mother_hurdle, 1, "greater"),
+  father_hurdle = calculate_evidence_ratio(model1_father_hurdle, 1, "less")
+)
+
+# MODEL 2: Home Time Percent
+model2_results <- list(
+  mother_distance = calculate_evidence_ratio(model2_mother_distance, 0, "greater"),
+  father_distance = calculate_evidence_ratio(model2_father_distance, 0, "greater"),
+  mother_hurdle = calculate_evidence_ratio(model2_mother_hurdle, 1, "greater"),
+  father_hurdle = calculate_evidence_ratio(model2_father_hurdle, 1, "greater")
+)
+
+# MODEL 3: Location Variance
+model3_results <- list(
+  mother_distance = calculate_evidence_ratio(model3_mother_distance, 0, "less"),
+  father_distance = calculate_evidence_ratio(model3_father_distance, 0, "less"),
+  mother_hurdle = calculate_evidence_ratio(model3_mother_hurdle, 1, "greater"),
+  father_hurdle = calculate_evidence_ratio(model3_father_hurdle, 1, "greater")
+)
+
+# MOTHER VS FATHER COMPARISONS
+
+# MODEL 1: Max Distance - Mother vs Father comparisons
+model1_comparisons <- list(
+  distance_diff = calculate_difference_evidence_ratio(model1_mother_distance, model1_father_distance, 0, "less"), # mothers more negative?
+  hurdle_ratio = calculate_difference_evidence_ratio(log(model1_mother_hurdle), log(model1_father_hurdle), 0, "less") # mothers higher odds?
+)
+
+# MODEL 2: Home Time Percent - Mother vs Father comparisons  
+model2_comparisons <- list(
+  distance_diff = calculate_difference_evidence_ratio(model2_mother_distance, model2_father_distance, 0, "greater"), # mothers more positive?
+  hurdle_ratio = calculate_difference_evidence_ratio(log(model2_mother_hurdle), log(model2_father_hurdle), 0, "greater") # mothers higher odds?
+)
+
+# MODEL 3: Location Variance - Mother vs Father comparisons
+model3_comparisons <- list(
+  distance_diff = calculate_difference_evidence_ratio(model3_mother_distance, model3_father_distance, 0, "less"), # mothers more negative?
+  hurdle_ratio = calculate_difference_evidence_ratio(log(model3_mother_hurdle), log(model3_father_hurdle), 0, "greater") # mothers higher odds?
+)
+
+sleep_hypothesis_results <- tibble(
+  # MODEL 1: Max Distance - Individual Effects
+  Test = c("Mother_MaxDist_Decrease", "Father_MaxDist_Decrease", 
+           "Mother_MaxDist_StayHome", "Father_MaxDist_StayHome",
+           # MODEL 2: Home Time - Individual Effects  
+           "Mother_HomeTime_Increase", "Father_HomeTime_Increase",
+           "Mother_HomeTime_CompleteStay", "Father_HomeTime_CompleteStay",
+           # MODEL 3: Location Variance - Individual Effects
+           "Mother_LocVar_Decrease", "Father_LocVar_Decrease",
+           "Mother_LocVar_StayHome", "Father_LocVar_StayHome",
+           # MODEL 1: Max Distance - Mother vs Father Comparisons
+           "MotherVsFather_MaxDist_GreaterDecrease", "MotherVsFather_MaxDist_SmallerStayOdds",
+           # MODEL 2: Home Time - Mother vs Father Comparisons
+           "MotherVsFather_HomeTime_GreaterIncrease", "MotherVsFather_HomeTime_HigherStayOdds", 
+           # MODEL 3: Location Variance - Mother vs Father Comparisons
+           "MotherVsFather_LocVar_GreaterDecrease", "MotherVsFather_LocVar_HigherStayOdds"),
+  Estimate = c(
+    # Model 1 estimates - replace with actual medians
+    median(model1_mother_distance), median(model1_father_distance),
+    median(model1_mother_hurdle), median(model1_father_hurdle),
+    # Model 2 estimates
+    median(model2_mother_distance), median(model2_father_distance), 
+    median(model2_mother_hurdle), median(model2_father_hurdle),
+    # Model 3 estimates
+    median(model3_mother_distance), median(model3_father_distance),
+    median(model3_mother_hurdle), median(model3_father_hurdle),
+    # Comparison estimates (differences)
+    median(model1_mother_distance - model1_father_distance),
+    median(log(model1_mother_hurdle) - log(model1_father_hurdle)),
+    median(model2_mother_distance - model2_father_distance),
+    median(log(model2_mother_hurdle) - log(model2_father_hurdle)),
+    median(model3_mother_distance - model3_father_distance),
+    median(log(model3_mother_hurdle) - log(model3_father_hurdle))
+  ),
+  
+  # Calculate 95% credible intervals
+  CI_Lower = c(
+    # Model 1 CIs - replace with actual quantiles
+    quantile(model1_mother_distance, 0.025), quantile(model1_father_distance, 0.025),
+    quantile(model1_mother_hurdle, 0.025), quantile(model1_father_hurdle, 0.025),
+    # Model 2 CIs
+    quantile(model2_mother_distance, 0.025), quantile(model2_father_distance, 0.025),
+    quantile(model2_mother_hurdle, 0.025), quantile(model2_father_hurdle, 0.025),
+    # Model 3 CIs
+    quantile(model3_mother_distance, 0.025), quantile(model3_father_distance, 0.025),
+    quantile(model3_mother_hurdle, 0.025), quantile(model3_father_hurdle, 0.025),
+    # Comparison CIs
+    quantile(model1_mother_distance - model1_father_distance, 0.025),
+    quantile(log(model1_mother_hurdle) - log(model1_father_hurdle), 0.025),
+    quantile(model2_mother_distance - model2_father_distance, 0.025),
+    quantile(log(model2_mother_hurdle) - log(model2_father_hurdle), 0.025),
+    quantile(model3_mother_distance - model3_father_distance, 0.025),
+    quantile(log(model3_mother_hurdle) - log(model3_father_hurdle), 0.025)
+  ),
+  
+  CI_Upper = c(
+    # Model 1 CIs - replace with actual quantiles
+    quantile(model1_mother_distance, 0.975), quantile(model1_father_distance, 0.975),
+    quantile(model1_mother_hurdle, 0.975), quantile(model1_father_hurdle, 0.975),
+    # Model 2 CIs
+    quantile(model2_mother_distance, 0.975), quantile(model2_father_distance, 0.975),
+    quantile(model2_mother_hurdle, 0.975), quantile(model2_father_hurdle, 0.975),
+    # Model 3 CIs
+    quantile(model3_mother_distance, 0.975), quantile(model3_father_distance, 0.975),
+    quantile(model3_mother_hurdle, 0.975), quantile(model3_father_hurdle, 0.975),
+    # Comparison CIs
+    quantile(model1_mother_distance - model1_father_distance, 0.975),
+    quantile(log(model1_mother_hurdle) - log(model1_father_hurdle), 0.975),
+    quantile(model2_mother_distance - model2_father_distance, 0.975),
+    quantile(log(model2_mother_hurdle) - log(model2_father_hurdle), 0.975),
+    quantile(model3_mother_distance - model3_father_distance, 0.975),
+    quantile(log(model3_mother_hurdle) - log(model3_father_hurdle), 0.975)
+  ),
+  
+  # Extract evidence ratios from your calculated results
+  EvidenceRatio = c(
+    model1_results$mother_distance$evidence_ratio, model1_results$father_distance$evidence_ratio,
+    model1_results$mother_hurdle$evidence_ratio, model1_results$father_hurdle$evidence_ratio,
+    model2_results$mother_distance$evidence_ratio, model2_results$father_distance$evidence_ratio,
+    model2_results$mother_hurdle$evidence_ratio, model2_results$father_hurdle$evidence_ratio,
+    model3_results$mother_distance$evidence_ratio, model3_results$father_distance$evidence_ratio,
+    model3_results$mother_hurdle$evidence_ratio, model3_results$father_hurdle$evidence_ratio,
+    model1_comparisons$distance_diff$evidence_ratio, model1_comparisons$hurdle_ratio$evidence_ratio,
+    model2_comparisons$distance_diff$evidence_ratio, model2_comparisons$hurdle_ratio$evidence_ratio,
+    model3_comparisons$distance_diff$evidence_ratio, model3_comparisons$hurdle_ratio$evidence_ratio
+  ),
+  
+  # Extract posterior probabilities
+  PostProb = c(
+    model1_results$mother_distance$probability, model1_results$father_distance$probability,
+    model1_results$mother_hurdle$probability, model1_results$father_hurdle$probability,
+    model2_results$mother_distance$probability, model2_results$father_distance$probability,
+    model2_results$mother_hurdle$probability, model2_results$father_hurdle$probability,
+    model3_results$mother_distance$probability, model3_results$father_distance$probability,
+    model3_results$mother_hurdle$probability, model3_results$father_hurdle$probability,
+    model1_comparisons$distance_diff$probability, model1_comparisons$hurdle_ratio$probability,
+    model2_comparisons$distance_diff$probability, model2_comparisons$hurdle_ratio$probability,
+    model3_comparisons$distance_diff$probability, model3_comparisons$hurdle_ratio$probability
+  )
+) %>%
+  mutate(
+    Estimate = round(Estimate, 2),
+    CI_Lower = round(CI_Lower, 2), 
+    CI_Upper = round(CI_Upper, 2),
+    EvidenceRatio = round(EvidenceRatio, 1),
+    PostProb = round(PostProb, 2),
+    # Create odds ratios for hurdle effects
+    OddsRatio = ifelse(grepl("StayHome|Stay", Test), round(exp(Estimate), 2), NA),
+    OR_CI_Lower = ifelse(grepl("StayHome|Stay", Test), round(exp(CI_Lower), 2), NA),
+    OR_CI_Upper = ifelse(grepl("StayHome|Stay", Test), round(exp(CI_Upper), 2), NA)
+  )
+
+sleep_stats <- sleep_hypothesis_results %>%
+  select(TestDescription = Test, Estimate, CI_Lower, CI_Upper, Evid.Ratio = EvidenceRatio, Post.Prob = PostProb) %>%
+  mutate(
+    Evid.Ratio = sprintf("%.1f", Evid.Ratio)
+  )
+
+# Create the summary stats table
+sleep_summary_stats <- sleep_hypothesis_results %>%
+  pivot_longer(cols = c(Estimate, CI_Lower, CI_Upper, EvidenceRatio, PostProb, OddsRatio, OR_CI_Lower, OR_CI_Upper), 
+               names_to = "Metric", values_to = "Value") %>%
+  unite("Statistic", Test, Metric, sep = "_") %>%
+  select(Statistic, Value) %>%
+  filter(!is.na(Value)) %>%
+  mutate(Value = round(Value, 3))
+
+#write.csv(sleep_summary_stats, here("analysis_code", "StatsForBodyText", "sleepspatial_summary.csv"), row.names = FALSE)
+```

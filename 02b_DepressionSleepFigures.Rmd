@@ -1,0 +1,323 @@
+---
+title: "02b_DepressionSleepPlots"
+author: "Chris Cox"
+date: "2025-08-27"
+output: pdf_document
+---
+
+# Depression
+## Depression Changes 
+```{r}
+mediator_depression_ordinal <- readRDS(here("analysis_code", "models", "mediator_depression_ordinal.rds"))
+
+newdata <- expand_grid(
+    Role = c("Mother", "Father"),
+    Leave = c("Maternity Leave", "Paternity Leave"),
+    isWeekend = "Weekday",
+    ParticipantID = unique(d_GPS$ParticipantID)
+  )
+
+predictions <- newdata %>%
+  add_predicted_draws(mediator_depression_ordinal, ndraws = 3000, re_formula = NA)  %>%
+  mutate(Leave_Clean = case_when(
+    Leave == "Paternity Leave" & Role == "Father" ~ "On Leave",
+    Leave == "Maternity Leave" & Role == "Mother" ~ "On Leave",
+    Leave == "Paternity Leave" & Role == "Mother" ~ "Not On Leave",
+    Leave == "Maternity Leave" & Role == "Father" ~ "Not On Leave"))
+  
+prob_summary <- predictions %>%
+  filter(!is.na(.prediction)) %>%
+  group_by(Role, Leave_Clean) %>%
+  count(.prediction = as.numeric(.prediction)) %>%
+  mutate(prob = n / sum(n)) %>%  
+  select(-n)
+  
+prob_differences <- prob_summary %>%
+    pivot_wider(names_from = Leave_Clean, values_from = prob, values_fill = 0) %>%
+    mutate(
+      difference = `On Leave` - `Not On Leave`,
+      change_type = ifelse(difference > 0, "Increase During Leave", "Decrease During Leave")
+    ) %>%
+    mutate(difference = difference * 100)
+
+DepressionChangePlot <- ggplot(aes(x = .prediction - 1, y = difference, fill = change_type), data = prob_differences, alpha = 0.5) +
+    geom_col(color = "black", alpha = 0.9) +
+    geom_hline(yintercept = 0, color = "black") +
+    scale_x_continuous(breaks = seq(0, 21, by = 3)) +
+    scale_y_continuous(breaks = seq(-10, 10, by = 2)) +
+    facet_wrap(~Role) +
+  scale_fill_manual(values = c("Increase During Leave" = "#00468b", "Decrease During Leave" = "#D73027"), name = "Probability Change") +
+    theme_bw() +
+    labs(title = "Depression Scores Difference", x = "Edinburgh Postnatal Depression Score", y = "Difference in Ordinal Probability (%)\n(On Leave - Not On Leave)") +
+    theme(
+    plot.title = element_text(hjust = 0.5, size = 20, face = "bold", color = "black"), 
+    axis.text.x = element_text(size = 15, color = "black"),
+    axis.title.x = element_text(size = 15, color = "black"),
+    axis.text.y = element_text(size = 15, color = "black"),
+    axis.title.y = element_text(size = 15, color = "black"),
+    legend.title = element_blank(),
+    legend.position = "top",
+    legend.key.size = unit(1, "lines"),
+    legend.text = element_text(size = 15),
+    legend.background = element_rect(fill = "transparent", color = NA),
+    legend.key = element_rect(fill = "transparent", color = NA),
+    strip.background = element_rect(color = "white", fill = "white", linewidth = 1.5, linetype = "solid"),
+    strip.text.x = element_text(size = 20, color = "black"),
+    strip.text.y = element_text(size = 15, color = "black"),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    panel.border = element_blank(),
+    strip.placement = "outside",
+    panel.spacing = unit(1, "cm"),
+    plot.margin = margin(t = 0.1,  # Top margin
+                             r = 0.1,  # Right margin
+                             b = 0.1,  # Bottom margin
+                             l = 0.1,  # Left margin
+                             unit = "cm"))
+
+predictions_summary <- predictions %>%
+  group_by(Role, Leave_Clean) %>%
+  count(.prediction = as.numeric(.prediction)) %>%
+  mutate(proportion = n / sum(n))
+
+rawdepressiondist <- predictions_summary %>%
+  ggplot(aes(x = .prediction - 1, y = proportion * 100, fill = Leave_Clean)) +
+  geom_col(position = "dodge", alpha = 0.9, color = "black") +
+  facet_wrap(~Role) +
+  scale_fill_manual(values = c("Not On Leave" = "#f39b7f", "On Leave" = "#3c5488")) +
+  labs(title = "Depression Score Distributions", x = "Edinburgh Postnatal Depression Score", y = "Proportion of Sample (%)", fill = NULL) +
+  theme_bw() +
+  scale_x_continuous(breaks = seq(0, 18, 3)) +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 20, face = "bold", color = "black"), 
+    axis.text.x = element_text(size = 15, color = "black"),
+    axis.title.x = element_text(size = 15, color = "black"),
+    axis.text.y = element_text(size = 15, color = "black"),
+    axis.title.y = element_text(size = 15, color = "black"),
+    axis.ticks.y = element_blank(),
+    legend.title = element_blank(),
+    legend.position = "top",
+    legend.key.size = unit(1, "lines"),
+    legend.text = element_text(size = 15),
+    legend.background = element_rect(fill = "transparent", color = NA),
+    legend.key = element_rect(fill = "transparent", color = NA),
+    strip.background = element_rect(color = "white", fill = "white", linewidth = 1.5, linetype = "solid"),
+    strip.text.x = element_text(size = 20, color = "black"),
+    strip.text.y = element_text(size = 15, color = "black"),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    panel.border = element_blank(),
+    strip.placement = "outside",
+    panel.spacing = unit(1, "cm"),
+    plot.margin = margin(t = 0.1,
+                             r = 0.1,
+                             b = 0.1,
+                             l = 0.1,
+                             unit = "cm"))
+
+DepressionChangeFull <- plot_grid(rawdepressiondist, NULL, DepressionChangePlot, nrow = 1, rel_widths = c(0.5, 0.1, 0.5))
+```
+
+## Extract Statistics
+
+```{r}
+# Hypothesis Tests for Depression Model
+h1_fathers_change <- hypothesis(mediator_depression_ordinal, "RoleFather:LeavePaternityLeave > 0")
+h2_mothers_vs_fathers_on_leave <- hypothesis(mediator_depression_ordinal, "RoleMother > RoleFather:LeavePaternityLeave")
+h3_mothers_change <- hypothesis(mediator_depression_ordinal, "RoleMother > (RoleMother + RoleMother:LeavePaternityLeave)")
+h4_mothers_vs_fathers_mat_leave <- hypothesis(mediator_depression_ordinal, "RoleMother > 0")
+h5_mothers_vs_fathers_pat_leave <- hypothesis(mediator_depression_ordinal, "(RoleMother + RoleMother:LeavePaternityLeave) > RoleFather:LeavePaternityLeave")
+h6_gender_gap_change <- hypothesis(mediator_depression_ordinal, "abs(RoleMother:LeavePaternityLeave) < abs(RoleFather:LeavePaternityLeave)")
+
+# Extract results from all hypothesis tests
+depression_hypothesis_results <- bind_rows(
+  extract_hypothesis_stats(h1_fathers_change, "FathersIncrease_MatToPat"),
+  extract_hypothesis_stats(h2_mothers_vs_fathers_on_leave, "MothersMatVsFathersPat"), 
+  extract_hypothesis_stats(h3_mothers_change, "MothersDecrease_MatToPat"),
+  extract_hypothesis_stats(h4_mothers_vs_fathers_mat_leave, "MothersVsFathers_MatLeave"),
+  extract_hypothesis_stats(h5_mothers_vs_fathers_pat_leave, "MothersVsFathers_PatLeave"),
+  extract_hypothesis_stats(h6_gender_gap_change, "GenderGapDecrease_PatLeave")
+)
+
+# Convert to wide format
+depression_summary_stats <- depression_hypothesis_results %>%
+  pivot_longer(cols = -Test, names_to = "Metric", values_to = "Value") %>%
+  unite("Statistic", Test, Metric, sep = "_") %>%
+  select(Statistic, Value) %>%
+  mutate(Value = round(Value, 2))
+
+# Save to CSV files
+#write.csv(depression_hypothesis_results, "depression_hypothesis_results.csv", row.names = FALSE)
+#write.csv(depression_summary_stats, here("analysis_code", "StatsForBodyText", "depression_summary_stats.csv"), row.names = FALSE)
+```
+
+
+# Sleep
+
+## Sleep Change Plot
+
+```{r}
+mediator_sleep <- readRDS(here("analysis_code", "models", "mediator_sleep.rds"))
+
+newdata <- expand_grid(
+    Role = c("Mother", "Father"),
+    Leave = c("Maternity Leave", "Paternity Leave"),
+    isWeekend = "Weekday",
+    ParticipantID = unique(d_GPS$ParticipantID)
+  )
+  
+predictions <- newdata %>%
+    add_predicted_draws(mediator_sleep, ndraws = 3000, re_formula = NA)  %>%
+  mutate(Leave_Clean = case_when(
+    Leave == "Paternity Leave" & Role == "Father" ~ "On Leave",
+    Leave == "Maternity Leave" & Role == "Mother" ~ "On Leave",
+    Leave == "Paternity Leave" & Role == "Mother" ~ "Not On Leave",
+    Leave == "Maternity Leave" & Role == "Father" ~ "Not On Leave"))
+
+prob_summary <- predictions %>%
+  filter(!is.na(.prediction)) %>%
+  group_by(Role, Leave_Clean) %>%
+  count(.prediction = as.numeric(.prediction)) %>%
+  mutate(prob = n / sum(n)) %>% 
+  select(-n)
+
+prob_differences <- prob_summary %>%
+  pivot_wider(names_from = Leave_Clean, values_from = prob, values_fill = 0) %>%
+  mutate(
+    difference = `On Leave` - `Not On Leave`,
+    change_type = ifelse(difference > 0, "Increase During Leave", "Decrease During Leave")
+  ) %>%
+  mutate(difference = difference * 100,
+         SleepQuality_factor = factor(.prediction, levels = 1:5, 
+                                  labels = c("V. Poor", "Poor", "Fair", "Good", "V. Good")))
+  
+SleepinessChangePlot <- ggplot(aes(x = SleepQuality_factor, y = difference, fill = change_type), data = prob_differences, alpha = 0.7) +
+    geom_col(color = "black", alpha = 0.9) +
+    geom_hline(yintercept = 0, color = "black") +
+    scale_y_continuous(breaks = seq(-30, 25, by = 5)) +
+    facet_wrap(~Role) +
+  scale_fill_manual(values = c("Increase During Leave" = "#00468b", "Decrease During Leave" = "#D73027"), name = "Probability Change") +
+    theme_bw() +
+    labs(title = "Daily Sleep Quality Difference", x = "Daily Reported Sleep Quality", y = "Difference in Ordinal Probability (%)\n(On Leave - Not On Leave)") +
+    theme(
+    plot.title = element_text(hjust = 0.5, size = 20, face = "bold", color = "black"), 
+    axis.text.x = element_text(size = 15, color = "black"),
+    axis.title.x = element_text(size = 15, color = "black"),
+    axis.text.y = element_text(size = 15, color = "black"),
+    axis.title.y = element_text(size = 15, color = "black"),
+    axis.ticks.y = element_blank(),
+    legend.title = element_blank(),
+    legend.position = "top",
+    legend.key.size = unit(1, "lines"),
+    legend.text = element_text(size = 15),
+    legend.background = element_rect(fill = "transparent", color = NA),
+    legend.key = element_rect(fill = "transparent", color = NA),
+    strip.background = element_rect(color = "white", fill = "white", linewidth = 1.5, linetype = "solid"),
+    strip.text.x = element_text(size = 20, color = "black"),
+    strip.text.y = element_text(size = 15, color = "black"),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    panel.border = element_blank(),
+    strip.placement = "outside",
+    panel.spacing = unit(1, "cm"),
+    plot.margin = margin(t = 0.1,
+                             r = 0.1,
+                             b = 0.1,
+                             l = 0.1,
+                             unit = "cm"))
+
+predictions_summary <- predictions %>%
+  group_by(Role, Leave_Clean) %>%
+  count(.prediction = as.numeric(.prediction)) %>%
+  mutate(proportion = n / sum(n)) %>%
+  mutate(SleepQuality_factor = factor(.prediction, levels = 1:5, 
+                                  labels = c("V. Poor", "Poor", "Fair", "Good", "V. Good")))
+
+
+rawsleepdist <- predictions_summary %>%
+  ggplot(aes(x = SleepQuality_factor, y = proportion * 100, fill = Leave_Clean)) +
+  geom_col(position = "dodge", alpha = 0.9, color = "black") +
+  facet_wrap(~Role) +
+  scale_fill_manual(values = c("Not On Leave" = "#f39b7f", "On Leave" = "#3c5488")) +
+  labs(title = "Daily Sleep Quality Distributions", x = "Daily Reported Sleep Quality", y = "Proportion of Sample (%)", fill = NULL) +
+  theme_bw() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 20, face = "bold", color = "black"), 
+    axis.text.x = element_text(size = 15, color = "black"),
+    axis.title.x = element_text(size = 15, color = "black"),
+    axis.text.y = element_text(size = 15, color = "black"),
+    axis.title.y = element_text(size = 15, color = "black"),
+    legend.title = element_blank(),
+    legend.position = "top",
+    legend.key.size = unit(1, "lines"),
+    legend.text = element_text(size = 15),
+    legend.background = element_rect(fill = "transparent", color = NA),
+    legend.key = element_rect(fill = "transparent", color = NA),
+    strip.background = element_rect(color = "white", fill = "white", linewidth = 1.5, linetype = "solid"),
+    strip.text.x = element_text(size = 20, color = "black"),
+    strip.text.y = element_text(size = 15, color = "black"),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    panel.border = element_blank(),
+    strip.placement = "outside",
+    panel.spacing = unit(1, "cm"),
+    plot.margin = margin(t = 0.1,
+                             r = 0.1,
+                             b = 0.1,
+                             l = 0.1,
+                             unit = "cm"))
+
+# Create section labels
+postnatal_depression_label <- ggdraw() + 
+  draw_label("A) Postnatal Depression", fontface = 'bold', size = 30, hjust = 0.5)
+
+daily_sleep_quality_label <- ggdraw() + 
+  draw_label("B) Daily Sleep Quality", fontface = 'bold', size = 30, hjust = 0.5)
+
+DepressionChangeFull <- plot_grid(rawdepressiondist, NULL, DepressionChangePlot, nrow = 1, rel_widths = c(0.5, 0.1, 0.5))
+SleepinessChangeFull <- plot_grid(rawsleepdist, NULL, SleepinessChangePlot, nrow = 1, rel_widths = c(0.5, 0.1, 0.5))
+
+# Final combination with section headings
+ChangesFull <- plot_grid(
+  postnatal_depression_label,
+  DepressionChangeFull, 
+  NULL,
+  daily_sleep_quality_label,
+  SleepinessChangeFull, 
+  nrow = 5, 
+  rel_heights = c(0.08, 0.46, 0.05, 0.08, 0.46)
+)
+
+#ggsave(plot = ChangesFull, file = here("analysis_code", "QuickPlots", "FiguresForPaper", "ChangesFull.pdf", height = 15, width = 18))
+```
+
+## Extract Statistics
+
+```{r}
+# Hypothesis Tests for Sleep Model
+h1_fathers_change <- hypothesis(mediator_sleep, "RoleFather:LeavePaternityLeave < 0")
+h2_mothers_vs_fathers_on_leave <- hypothesis(mediator_sleep, "RoleMother < RoleFather:LeavePaternityLeave")
+h3_mothers_change <- hypothesis(mediator_sleep, "RoleMother:LeavePaternityLeave > 0")
+h4_mothers_vs_fathers_mat_leave <- hypothesis(mediator_sleep, "RoleMother < 0")
+h5_mothers_vs_fathers_pat_leave <- hypothesis(mediator_sleep, "(RoleMother + RoleMother:LeavePaternityLeave) > RoleFather:LeavePaternityLeave")
+h6_gender_gap_change <- hypothesis(mediator_sleep, "abs(RoleMother:LeavePaternityLeave) < abs(RoleFather:LeavePaternityLeave)")
+
+# Extract results from all hypothesis tests
+sleep_hypothesis_results <- bind_rows(
+  extract_hypothesis_stats(h1_fathers_change, "FathersDecrease_MatToPat"),
+  extract_hypothesis_stats(h2_mothers_vs_fathers_on_leave, "MothersMatVsFathersPat"), 
+  extract_hypothesis_stats(h3_mothers_change, "MothersIncrease_MatToPat"),
+  extract_hypothesis_stats(h4_mothers_vs_fathers_mat_leave, "MothersVsFathers_MatLeave"),
+  extract_hypothesis_stats(h5_mothers_vs_fathers_pat_leave, "MothersVsFathers_PatLeave"),
+  extract_hypothesis_stats(h6_gender_gap_change, "GenderGapDecrease_PatLeave")
+)
+
+# Convert to wide format
+sleep_summary_stats <- sleep_hypothesis_results %>%
+  pivot_longer(cols = -Test, names_to = "Metric", values_to = "Value") %>%
+  unite("Statistic", Test, Metric, sep = "_") %>%
+  select(Statistic, Value) %>%
+  mutate(Value = round(Value, 2))
+
+#write.csv(sleep_summary_stats, here("analysis_code", "StatsForBodyText", "sleep_summary_stats.csv"), row.names = FALSE)
+```

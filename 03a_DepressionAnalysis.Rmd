@@ -1,0 +1,129 @@
+---
+title: "DepressionAnalysis"
+output: html_document
+date: "2025-06-18"
+editor_options: 
+  chunk_output_type: console
+---
+
+# Depression Associations
+
+## Home-Time Percentage
+```{r}
+formula_zoib <- bf(
+  totalHomeTimePercent_01 ~ 0 + Role + Role:Leave + Leave:mo(d_epdst_sum) + Leave:mo(SleepQuality) + Role:Leave:mo(d_epdst_sum) + Role:Leave:mo(SleepQuality) + (Leave | gr(ParticipantID, by = Role)),
+  zoi ~ 0 + Role + Role:Leave + Leave:mo(d_epdst_sum) + Leave:mo(SleepQuality) + Role:Leave:mo(d_epdst_sum) + Role:Leave:mo(SleepQuality),
+  coi ~ 0 + Role + Role:Leave + Leave:mo(d_epdst_sum) + Leave:mo(SleepQuality) + Role:Leave:mo(d_epdst_sum) + Role:Leave:mo(SleepQuality),
+  phi ~ 0 + Role + Role:Leave
+)
+
+priors_zoib <- c(
+  prior(normal(0, 3), class = b),
+  prior(normal(0, 3), class = b, dpar = "zoi"),
+  prior(normal(0, 3), class = b, dpar = "coi"), 
+  prior(normal(0, 2), class = b, dpar = "phi"),
+  prior(normal(0, 2), class = sd, group = ParticipantID),
+  prior(lkj(2), class = cor, group = ParticipantID)
+)
+
+modelHomeTimePercent <- brm(
+    formula_zoib,
+    prior = priors_zoib,
+    family = zero_one_inflated_beta(),
+    data = filter(d_GPS, isWeekend == "Weekday"),
+    init = 0,
+    cores = 64,
+    chains = 2,
+    warmup = 500,
+    iter = 2000,
+    control = list(adapt_delta = 0.9, max_treedepth = 15),
+    backend = 'cmdstan')
+
+pp_check(modelHomeTimePercent, ndraws = 100)
+```
+
+## maxDistanceFromHomeKm
+```{r}
+formula_1 <- bf(
+  maxDistanceFromHomeKm ~ 0 + Role + Role:Leave + Role:mo(d_epdst_sum) + Role:mo(SleepQuality) + Role:Leave:mo(d_epdst_sum) + Role:Leave:mo(SleepQuality) + (Leave | gr(ParticipantID, by = Role)),
+  hu ~ 0 + Role + Role:Leave + Role:mo(d_epdst_sum) + Role:mo(SleepQuality) + Role:Leave:mo(d_epdst_sum) + Role:Leave:mo(SleepQuality),
+  shape ~ 0 + Role + Role:Leave + Role:mo(d_epdst_sum) + Role:mo(SleepQuality) + Role:Leave:mo(d_epdst_sum) + Role:Leave:mo(SleepQuality)
+)
+
+priors_hurdle <- c(
+  prior(normal(2, 1), class = b, coef = "RoleFather"),
+  prior(normal(2, 1), class = b, coef = "RoleMother"),
+  prior(normal(0, 0.3), class = b), 
+  prior(normal(-1, 0.5), class = b, coef = "RoleFather", dpar = "hu"),
+  prior(normal(-1, 0.5), class = b, coef = "RoleMother", dpar = "hu"),
+  prior(normal(0, 0.3), class = b, dpar = "hu"),
+  prior(normal(1, 0.5), class = b, coef = "RoleFather", dpar = "shape"),
+  prior(normal(1, 0.5), class = b, coef = "RoleMother", dpar = "shape"),
+  prior(normal(0, 0.3), class = b, dpar = "shape"),
+  prior(exponential(2), class = sd),
+  prior(lkj(2), class = cor)
+)
+
+modelmaxdistance <- brm(
+    formula_1,
+    family = hurdle_gamma(),
+    prior = priors_hurdle,
+    data = filter(d_GPS, isWeekend == "Weekday"),
+    cores = 64,
+    chains = 2,
+    warmup = 500,
+    iter = 2000,
+    control = list(adapt_delta = 0.90, max_treedepth = 15),
+    backend = 'cmdstan')
+
+pp_check(modelmaxdistance, ndraws = 100) +
+  xlim(c(0, 25))
+```
+
+## Location Variance
+```{r}
+formula_1 <- bf(
+  locationVariance ~ 0 + Role + Role:Leave + Role:mo(d_epdst_sum) + Role:mo(SleepQuality) + Role:Leave:mo(d_epdst_sum) + Role:Leave:mo(SleepQuality) + (Leave | gr(ParticipantID, by = Role)),
+  hu ~ 0 + Role + Role:Leave + Role:mo(d_epdst_sum) + Role:mo(SleepQuality) + Role:Leave:mo(d_epdst_sum) + Role:Leave:mo(SleepQuality),
+  shape ~ 0 + Role + Role:Leave + Role:mo(d_epdst_sum) + Role:mo(SleepQuality) + Role:Leave:mo(d_epdst_sum) + Role:Leave:mo(SleepQuality)
+)
+
+priors_hurdle <- c(
+  prior(normal(2, 2), class = b, coef = "RoleFather"),
+  prior(normal(2, 2), class = b, coef = "RoleMother"),
+  prior(normal(0, 0.5), class = b, coef = "RoleFather:LeavePaternityLeave"),
+  prior(normal(0, 0.5), class = b, coef = "RoleMother:LeavePaternityLeave"),
+  prior(normal(0, 0.3), class = b),
+  prior(normal(-1, 0.5), class = b, coef = "RoleFather", dpar = "hu"),
+  prior(normal(-1, 0.5), class = b, coef = "RoleMother", dpar = "hu"),
+  prior(normal(0, 0.3), class = b, dpar = "hu"),
+  prior(normal(1, 0.5), class = b, coef = "RoleFather", dpar = "shape"),
+  prior(normal(1, 0.5), class = b, coef = "RoleMother", dpar = "shape"),
+  prior(normal(0, 0.3), class = b, dpar = "shape"),
+  prior(exponential(2), class = sd),
+  prior(lkj(2), class = cor)
+)
+
+modellocationvariance <- brm(
+    formula_1,
+    prior = priors_hurdle,
+    sample_prior = "yes",
+    family = hurdle_gamma(),
+    data = filter(d_GPS, isWeekend == "Weekday"),
+    cores = 64,
+    chains = 2,
+    warmup = 500,
+    iter = 2000,
+    control = list(adapt_delta = 0.80, max_treedepth = 10),
+    backend = 'cmdstan')
+
+pp_check(modellocationvariance, ndraws = 100) +
+  xlim(c(0, 20))
+
+modellocationvariance_lognormal <- readRDS(here("analysis_code", "models", "modellocationvariance.rds"))
+
+pp_check(modellocationvariance_lognormal, ndraws = 100) +
+  xlim(c(0, 20))
+
+saveRDS(modellocationvariance, here("analysis_code", "models", "modellocationvariance.rds"))
+```

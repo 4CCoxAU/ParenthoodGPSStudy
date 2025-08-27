@@ -1,0 +1,66 @@
+---
+title: "DepressionSleepAnalysis"
+author: "Chris Cox"
+date: "2025-07-30"
+output: pdf_document
+editor_options: 
+  chunk_output_type: console
+---
+
+# Ordinal Depression Model
+
+```{r}
+formula_depression <- bf(d_epdst_sum ~ 1 + Role + Role:Leave + (Leave | gr(ParticipantID, by = Role)))
+
+priors_depression <- c(
+  prior(normal(0, 5), class = Intercept),
+  prior(normal(0, 2), class = b),
+  prior(normal(0, 2), class = sd, group = ParticipantID),
+  prior(lkj(2), class = cor, group = ParticipantID)
+)
+
+mediator_depression_ordinal <- brm(
+  formula_depression,
+  family = cumulative("logit"),
+  data = d_GPS_depression,
+  prior = priors_depression,
+  cores = 64,
+  chains = 2,
+  warmup = 500,
+  iter = 5000,
+  control = list(adapt_delta = 0.95),
+  backend = 'cmdstan'
+)
+
+pp_check(mediator_depression_ordinal, ndraws = 100)
+```
+
+# Ordinal Sleep Model
+
+```{r}
+formula_sleep <- bf(
+  SleepQuality ~ 1 + Role + Role:Leave + Role:Leave:isWeekend + (Leave | gr(ParticipantID, by = Role))
+)
+
+priors_sleep <- c(
+  prior(normal(0, 5), class = Intercept),
+  prior(normal(0, 2), class = b),
+  prior(normal(0, 2), class = sd, group = ParticipantID),
+  prior(lkj(2), class = cor, group = ParticipantID)
+)
+
+mediator_sleep <- brm(
+  formula_sleep,
+  family = cumulative("logit"),
+  prior = priors_sleep,
+  data = d_GPS,
+  cores = 64,
+  chains = 2,
+  warmup = 500,
+  iter = 2000,
+  control = list(adapt_delta = 0.95),
+  backend = 'cmdstan'
+)
+
+pp_check(mediator_sleep, ndraws = 100)
+```

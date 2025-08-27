@@ -1,0 +1,522 @@
+---
+title: "02_LeaveDifferencesFigures"
+output: pdf_document
+date: "2025-07-25"
+editor_options: 
+  chunk_output_type: console
+---
+
+# Load models
+
+```{r}
+load_simple_models()
+```
+
+# Make Plots
+
+## Mobility Range Plot
+
+```{r}
+DistancePredictionsData <- get_subject_predictions_med(model_maxDistanceFromHomeKm_simple) %>% mutate(Metric = "Max Distance")
+RadiusPredictionsData <- get_subject_predictions_med(model_radiusOfGyrationKm_simple) %>% mutate(Metric = "Radius of Gyration")
+  
+DistancePredictionsData <- rbind(DistancePredictionsData, RadiusPredictionsData) %>%
+  mutate(OnLeave = case_when(
+    Leave == "Paternity Leave" & Role == "Father" ~ "On Leave",
+    Leave == "Maternity Leave" & Role == "Mother" ~ "On Leave",
+    Leave == "Paternity Leave" & Role == "Mother" ~ "Not On Leave",
+    Leave == "Maternity Leave" & Role == "Father" ~ "Not On Leave",
+  ))
+
+combined_dot_interval_plot <- ggplot(DistancePredictionsData, aes(y = 0, x = median_pred, color = OnLeave, fill = OnLeave)) +
+  stat_dots(quantiles = 150, .width = c(0.5, 0.89), point_interval = "median_qi", dotsize = 1, alpha = 0.9, side = "both") +
+  stat_pointinterval(aes(x = median_pred, y = - 0.7), data = DistancePredictionsData, .width = c(.66, .95), position = position_dodge(width = 0.4)) +
+  facet_grid2(Role ~ Metric, scales = "free", independent = "y", switch = "y") +
+  xlim(c(0, 10)) +
+  scale_color_manual(values = c("On Leave" = "#3c5488", "Not On Leave" = "#f39b7f")) +
+  scale_fill_manual(values = c("On Leave" = "#3c5488", "Not On Leave" = "#f39b7f")) +
+  labs(title = "A) Mobility Range", 
+       x = "Kilometers", y = "", color = "Leave Status", fill = "Leave Status") +
+  expand_limits(x = 0) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 20, face = "bold", color = "black"), 
+    axis.text.x = element_text(size = 15, color = "black"),
+    axis.title.x = element_text(size = 15, color = "black"),
+    axis.text.y = element_blank(),
+    axis.title.y = element_text(size = 15, color = "black"),
+    legend.title = element_blank(),
+    legend.position = "top",
+    legend.key.size = unit(1, "lines"),
+    legend.text = element_text(size = 15),
+    legend.background = element_rect(fill = "transparent", color = NA),
+    legend.key = element_rect(fill = "transparent", color = NA),
+    strip.background = element_rect(color = "white", fill = "white", linewidth = 1.5, linetype = "solid"),
+    strip.text.x = element_text(size = 15, color = "black"),
+    strip.text.y = element_text(size = 15, color = "black"),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    panel.border = element_blank(),
+    strip.placement = "outside",
+    panel.spacing = unit(2, "cm"),
+    plot.margin = margin(t = 0.1,
+                             r = 0.1,
+                             b = 0.1,
+                             l = 0.1,
+                             unit = "cm"))
+combined_dot_interval_plot
+```
+
+## Home Time Percentage
+
+```{r}
+HPer_preds <- get_subject_predictions_HPer(modelHomeTimePercent_simple) %>%
+  mutate(OnLeave = case_when(
+    Leave == "Paternity Leave" & Role == "Father" ~ "On Leave",
+    Leave == "Maternity Leave" & Role == "Mother" ~ "On Leave",
+    Leave == "Paternity Leave" & Role == "Mother" ~ "Not On Leave",
+    Leave == "Maternity Leave" & Role == "Father" ~ "Not On Leave",
+  ))
+
+HPer_preds_clean <- HPer_preds %>%
+  filter(isWeekend == "Weekday") %>%
+  mutate(
+    Condition = case_when(
+      OnLeave == "Not On Leave" ~ "Not On Leave",
+      OnLeave == "On Leave" ~ "On Leave"
+    ),
+    Condition = factor(Condition, levels = c("On Leave", "Not On Leave")),
+    median_pred = median_pred * 100
+  )
+
+set.seed(123) 
+
+HPer_jittered <- HPer_preds_clean %>%
+  mutate(
+    Condition_num = as.numeric(Condition),
+    Condition_dodged = case_when(
+      Condition == "On Leave" ~ Condition_num - 0.25,
+      Condition == "Not On Leave" ~ Condition_num + 0.25
+    ),
+    Condition_jittered = Condition_num + runif(n(), -0.1, 0.05)
+  )
+
+
+HPer_Plot <- ggplot(HPer_jittered, aes(fill = Condition, color = Condition)) +
+  geom_path(aes(x = Condition_jittered, y = median_pred, group = ParticipantID), alpha = 0.3, color = "gray60", linewidth = 0.5) +
+  geom_boxplot(aes(x = Condition_dodged, y = median_pred), width = 0.1, alpha = 0.9, outlier.shape = NA, color = "black") +
+  geom_point(aes(x = Condition_jittered, y = median_pred), alpha = 0.8, size = 1.5) +
+  facet_wrap(~Role) +
+  scale_color_manual(values = c("On Leave" = "#3c5488", "Not On Leave" = "#f39b7f")) +
+  scale_fill_manual(values = c("On Leave" = "#3c5488", "Not On Leave" = "#f39b7f")) +
+  scale_x_continuous(breaks = c(1, 2), labels = c("On Leave", "Not On Leave")) +
+  labs(x = '', y = 'Home Time (%)') +
+  guides(color = guide_legend(reverse = TRUE), fill = guide_legend(reverse = TRUE)) +
+  ylim(c(42, 85)) +
+  ggtitle('B) Home Time During Daytime Hours') +
+  theme_bw() + 
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 20, face = "bold"),
+    axis.text.x = element_blank(),
+    axis.title.x = element_text(size = 15, color = "black"),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_text(size = 15, color = "black"),
+    axis.title.y = element_text(size = 15, color = "black"),
+    legend.title = element_blank(),
+    legend.position = "top",
+    legend.key.size = unit(1, "lines"),
+    legend.text = element_text(size = 15),
+    legend.background = element_rect(fill = "transparent", color = NA),
+    legend.key = element_rect(fill = "transparent", color = NA),
+    panel.border = element_blank(),
+    strip.background = element_rect(color="white", fill="white", linewidth=1.5, linetype="solid"),
+    strip.text.x = element_text(size = 20, color = "black"),
+    panel.spacing = unit(2, "lines"),
+    panel.grid.major.x= element_blank(),
+    panel.grid.minor.x = element_blank(),
+    plot.margin = margin(t = 0.1,
+                             r = 0.1,
+                             b = 0.1,
+                             l = 0.1,
+                             unit = "cm"))
+```
+
+## Ellipsis Plot
+
+```{r}
+draws <- as_draws_df(model_SDE_simple)
+
+father_not_on_leave <- exp(draws$b_RoleFather) %>%
+  as_tibble() %>%
+  mutate(Leave = "Maternity Leave",
+         Role = "Father",
+         OnLeave = "Not On Leave")
+
+father_on_leave <- exp(draws$b_RoleFather + draws$`b_RoleFather:LeavePaternityLeave`) %>%
+  as_tibble() %>%
+  mutate(Leave = "Paternity Leave",
+         Role = "Father",
+         OnLeave = "On Leave")
+
+mother_on_leave <- exp(draws$b_RoleMother) %>%
+  as_tibble() %>%
+  mutate(Leave = "Maternity Leave",
+         Role = "Mother",
+         OnLeave = "On Leave")
+
+mother_not_on_leave <- exp(draws$b_RoleMother + draws$`b_RoleMother:LeavePaternityLeave`) %>%
+  as_tibble() %>%
+  mutate(Leave = "Paternity Leave",
+         Role = "Mother",
+         OnLeave = "Not On Leave")
+
+SDE_summary_enhanced <- extract_model_predictions(model_SDE_simple, "SDE") %>%
+  group_by(Role, OnLeave) %>%
+  summarise(
+    median_area = median(value),
+    mean_area = mean(value),
+    q25 = quantile(value, 0.25),
+    q75 = quantile(value, 0.75),
+    sd_area = sd(value),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    radius_median = sqrt(median_area / pi),
+    radius_q25 = sqrt(q25 / pi),
+    radius_q75 = sqrt(q75 / pi),
+    x_pos = case_when(
+      Role == "Father" & OnLeave == "Not On Leave" ~ 2,
+      Role == "Father" & OnLeave == "On Leave" ~ 1,
+      Role == "Mother" & OnLeave == "Not On Leave" ~ 4,
+      Role == "Mother" & OnLeave == "On Leave" ~ 3
+    ),
+    y_pos = 0.85,
+    condition_label = paste(Role, "-", OnLeave)
+  )
+
+# Radar plot to show only SDE (area) as triangles
+create_sde_area_radar <- function() {
+  
+  # Prepare data for SDE area visualization only
+  sde_area_data <- SDE_summary_enhanced %>%
+    filter(Role %in% c("Father", "Mother")) %>%
+    mutate(condition = paste(Role, OnLeave, sep = " - ")) %>%
+    select(condition, Role, OnLeave, median_area)
+  
+  # Create triangle coordinates for each condition
+  # Each triangle represents the mean ellipse area as a regular triangle
+  triangle_coords <- sde_area_data %>%
+    expand_grid(vertex = 1:3) %>%
+    mutate(
+      # Calculate angles for triangle vertices (starting from top)
+      angle = (vertex - 1) * 2*pi/3 - pi/2,  # -pi/2 to start from top
+      
+      # Scale the triangle size based on actual area (no normalization)
+      radius = sqrt(median_area / pi),  # Convert area to radius for visualization
+      
+      # Calculate x,y coordinates
+      x = radius * cos(angle),
+      y = radius * sin(angle)
+    ) %>%
+    # Close the triangle by adding the first vertex at the end
+    group_by(condition, Role, OnLeave) %>%
+    arrange(vertex) #%>%
+    #bind_rows(slice(1)) %>%
+    #ungroup()
+  
+  # Create background grid (circular) - adjust based on actual data range
+  max_radius <- max(sqrt(sde_area_data$median_area / pi))
+  grid_radii <- seq(0, max_radius, length.out = 5)[-1]  # Remove 0
+  
+  # Create grid data for each role to enable faceting
+  grid_data <- expand_grid(
+    Role = c("Father", "Mother"),
+    radius = grid_radii,
+    angle = seq(0, 2*pi, length.out = 100)
+  ) %>%
+    mutate(
+      x = radius * cos(angle),
+      y = radius * sin(angle)
+    )
+  
+  # Create reference lines with actual area values for each role
+  reference_lines <- expand_grid(
+    Role = c("Father", "Mother"),
+    radius = grid_radii
+  ) %>%
+    mutate(
+      area = radius^2 * pi,  # Convert back to area for labels
+      label = paste0(round(area, 1), " km²")
+    )
+  
+  # Create the plot
+  radar_plot <- ggplot() +
+    
+    # Add background grid with stronger lines
+    geom_path(data = grid_data, aes(x = x, y = y, group = interaction(Role, radius)), color = "black", alpha = 0.5, linetype = "dashed", size = 0.5) +
+    
+    # Add radial lines for better coordinate reference
+    geom_segment(data = expand_grid(Role = c("Father", "Mother"), angle = seq(0, 2*pi, length.out = 9)[-9]), aes(x = 0, y = 0, xend = 1 * max_radius * cos(angle), yend = 1*max_radius * sin(angle)), color = "gray50", linetype = "dashed", alpha = 0.9, size = 0.3) +
+    
+    geom_text(data = reference_lines, aes(x = 0, y = radius + max_radius * 0.03, label = label), size = 3.5, color = "black", hjust = 0.5, vjust = 0, fontface = "bold") +
+    
+    # Add scale line markers
+    geom_segment(data = reference_lines, aes(x = 0, y = radius - max_radius * 0.02, yend = radius + max_radius * 0.02, xend = 0), color = "gray50", size = 0.8) +
+    
+    # Add triangle areas (filled)
+    geom_polygon(data = triangle_coords, aes(x = x, y = y, fill = OnLeave, group = condition), alpha = 0.4) +
+    
+    # Add triangle outlines (closed polygons)
+    geom_polygon(data = triangle_coords, aes(x = x, y = y, color = OnLeave, group = condition), fill = NA, size = 1.5) +
+    
+    # Add points at triangle vertices
+    #geom_point(data = filter(triangle_coords, vertex <= 3), aes(x = x, y = y, color = OnLeave), size = 3, stroke = 1, show.legend = F) +
+    
+    # Add center point for reference for each role
+    geom_point(data = data.frame(Role = c("Father", "Mother"), x = 0, y = 0), aes(x = x, y = y), color = "black", size = 2, alpha = 1.5) +
+    
+    # Facet by role
+    facet_wrap(~ Role) +
+    
+    # Scales
+    scale_color_manual(values = c("On Leave" = "#3c5488", "Not On Leave" = "#f39b7f")) +
+    scale_fill_manual(values = c("On Leave" = "#3c5488", "Not On Leave" = "#f39b7f")) +
+    
+    # Coordinate system - adjust limits based on actual data
+    coord_fixed(ratio = 1) +
+    xlim(-max_radius * 1.3, max_radius * 1.3) + 
+    ylim(-max_radius * 1.40, max_radius * 1.3) +
+    
+    # Theme
+    theme_minimal() +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 20, face = "bold"),
+      axis.text = element_blank(),
+      axis.ticks = element_blank(),
+      axis.title = element_blank(),
+      legend.title = element_blank(),
+        legend.position = "top",
+        legend.key.size = unit(1, "lines"),
+        legend.text = element_text(size = 15),
+        legend.background = element_rect(fill = "transparent", color = NA),
+        legend.key = element_rect(fill = "transparent", color = NA),
+        strip.background = element_rect(color="white", fill="white", linewidth=1.5, linetype="solid"),
+        strip.text.x = element_text(size = 20, color = "black"),
+      panel.grid = element_blank(),
+      panel.spacing = unit(1, "lines"),
+      plot.margin = margin(t = 0,  # Top margin
+                             r = 0,  # Right margin
+                             b = 0,  # Bottom margin
+                             l = 0,  # Left margin
+                             unit = "cm")) +  # or whatever works best
+    labs(title = "C) Area of Activity Space")
+  
+  return(radar_plot)
+}
+
+sde_area_radar <- create_sde_area_radar()
+```
+
+## Activity Plot
+
+```{r}
+morningAct_preds <- get_subject_predictions_HPer(model_morningActivityMins_simple) %>%
+  mutate(Activity = "Morning")
+
+afternoonAct_preds <- get_subject_predictions_HPer(model_afternoonActivityMins_simple) %>%
+  mutate(Activity = "Afternoon")
+
+eveningAct_preds <- get_subject_predictions_HPer(model_eveningActivityMins_simple) %>%
+  mutate(Activity = "Evening")
+
+Act_preds <- rbind(morningAct_preds, afternoonAct_preds, eveningAct_preds) %>%
+  mutate(OnLeave = case_when(
+    Leave == "Paternity Leave" & Role == "Father" ~ "On Leave",
+    Leave == "Maternity Leave" & Role == "Mother" ~ "On Leave",
+    Leave == "Paternity Leave" & Role == "Mother" ~ "Not On Leave",
+    Leave == "Maternity Leave" & Role == "Father" ~ "Not On Leave",
+  )) %>%
+  mutate(Activity = as.factor(Activity)) %>%
+  mutate(Activity = factor(Activity, levels = c("Morning", "Afternoon", "Evening")))
+
+activity_slope_data <- Act_preds %>%
+  filter(isWeekend == "Weekday") %>%
+  group_by(ParticipantID, Role, OnLeave) %>%
+  summarise(
+    Morning = median_pred[Activity == "Morning"],
+    Afternoon = median_pred[Activity == "Afternoon"],
+    Evening = median_pred[Activity == "Evening"],
+    .groups = "drop"
+  ) %>%
+  pivot_longer(cols = c(Morning, Afternoon, Evening), 
+               names_to = "Activity", values_to = "median_pred") %>%
+  mutate(Activity = factor(Activity, levels = c("Morning", "Afternoon", "Evening")))
+
+activity_slope_data$group_var <- paste(activity_slope_data$ParticipantID, activity_slope_data$OnLeave, sep = "_")
+
+Act_plot <- ggplot(activity_slope_data, aes(x = Activity, y = median_pred, color = OnLeave, fill = OnLeave, group = ParticipantID)) +
+  geom_smooth(aes(group = group_var), se = F, alpha = 0.4, show.legend = T, size = 0.1) +
+  geom_point(alpha = 0.8, size = 1, position = position_jitter(width = 0.05)) +
+  stat_smooth(aes(group = OnLeave, fill = OnLeave), method = "loess", se = F, alpha = 0.8, show.legend = T, size = 1.5) +
+  facet_wrap(~Role) +
+  scale_color_manual(values = c("On Leave" = "#3c5488", "Not On Leave" = "#f39b7f")) +
+  scale_fill_manual(values = c("On Leave" = "#3c5488", "Not On Leave" = "#f39b7f")) +
+  labs(y = "Activity (minutes)", x = NULL, color = "Leave Status") +
+  guides(color = guide_legend(override.aes = list(linetype = 1, size = 2, alpha = 1, fill = NA)), fill = "none"  # don't show fill legend at all
+  ) +
+  theme_bw() +
+  ggtitle('D) Out-of-Home Activity') +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 20, face = "bold"), 
+    axis.text.x = element_text(size = 15, color = "black"),
+    axis.title.x = element_text(size = 15, color = "black"),
+    axis.text.y = element_text(size = 15, color = "black"),
+    axis.title.y = element_text(size = 15, color = "black"),
+    legend.title = element_blank(),
+    legend.position = "top",
+    legend.key.size = unit(2, "lines"),
+    legend.text = element_text(size = 15),
+    legend.background = element_rect(fill = "transparent", color = NA),
+    legend.key = element_rect(fill = "transparent", color = NA),
+    panel.border = element_blank(),
+    panel.spacing = unit(2, "lines"),
+    strip.background = element_rect(color="white", fill="white", linewidth=1.5, linetype="solid"),
+    strip.text.x = element_text(size = 20, color = "black"),
+    plot.margin = margin(t = 0.1,
+                             r = 0.1,
+                             b = 0.1,
+                             l = 0.1,
+                             unit = "cm"))
+Act_plot
+```
+
+## Spatial Complexity Plot
+```{r}
+SpatialComplexityData <- rbind(extract_model_predictions(model_locationVariance_simple, "Location Variance"),
+                               extract_model_predictions(model_maj2min_simple, "Major To Minor Ratio"),
+                               extract_model_predictions(model_entropy_simple, "Spatial Entropy")) %>%
+  mutate(Metric = factor(Metric, levels = c("Location Variance", "Spatial Entropy","Major To Minor Ratio")))
+
+
+SpatialComplexityData <- rbind(get_subject_predictions_med(model_locationVariance_simple) %>% mutate(Metric = "Location Variance"),
+                               get_subject_predictions_HPer(model_maj2min_simple) %>% mutate(Metric = "Major To Minor Ratio"),
+                               get_subject_predictions_HPer(model_entropy_simple) %>% mutate(Metric = "Spatial Entropy")) %>%
+  mutate(Metric = factor(Metric, levels = c("Location Variance", "Spatial Entropy","Major To Minor Ratio"))) %>%
+  mutate(OnLeave = case_when(
+    Leave == "Paternity Leave" & Role == "Father" ~ "On Leave",
+    Leave == "Maternity Leave" & Role == "Mother" ~ "On Leave",
+    Leave == "Paternity Leave" & Role == "Mother" ~ "Not On Leave",
+    Leave == "Maternity Leave" & Role == "Father" ~ "Not On Leave",
+  ))
+
+variance_plot <- ggplot(SpatialComplexityData, aes(y = 0, x = value, color = OnLeave, fill = OnLeave)) +
+  stat_dots(quantiles = 150, .width = c(0.5, 0.89), point_interval = "median_qi", dotsize = 1, alpha = 0.9, side = "top") +
+  stat_pointinterval(aes(x = value, y = -0.35), data = SpatialComplexityData, .width = c(.66, .95), position = position_dodge(width = 0.4)) +
+  facet_grid2(Role ~ Metric, scales = "free", independent = "y", switch = "y") +
+  scale_color_manual(values = c("On Leave" = "#3c5488", "Not On Leave" = "#f39b7f")) +
+  scale_fill_manual(values = c("On Leave" = "#3c5488", "Not On Leave" = "#f39b7f")) +
+  labs(title = "E) Spatial Complexity", x = "", y = "", color = "Leave Status", fill = "Leave Status") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 20, face = "bold", color = "black"), 
+    axis.text.x = element_text(size = 15, color = "black"),
+    axis.title.x = element_text(size = 15, color = "black"),
+    axis.text.y = element_blank(),
+    axis.title.y = element_text(size = 15, color = "black"),
+    legend.title = element_blank(),
+    legend.position = "top",
+    legend.key.size = unit(1, "lines"),
+    legend.text = element_text(size = 15),
+    legend.background = element_rect(fill = "transparent", color = NA),
+    legend.key = element_rect(fill = "transparent", color = NA),
+    strip.background = element_rect(color = "white", fill = "white", linewidth = 1.5, linetype = "solid"),
+    strip.text.x = element_text(size = 15, color = "black"),
+    strip.text.y = element_text(size = 15, color = "black"),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    panel.border = element_blank(),
+    strip.placement = "outside",
+    panel.spacing = unit(2, "cm"),
+    plot.margin = margin(t = 0.1,
+                             r = 0.5, 
+                             b = 0.1, 
+                             l = 0.1, 
+                             unit = "cm"))
+variance_plot
+```
+
+# Combine the Plots into a Panel
+```{r}
+plot1 <- plot_grid(combined_dot_interval_plot, NULL, HPer_Plot, nrow = 1, rel_widths = c(0.5, 0.1, 0.5))
+plot2 <- plot_grid(sde_area_radar, NULL, Act_plot, nrow = 1, rel_widths = c(0.5, 0.1, 0.5), align = T)
+plot3 <- plot_grid(plot1, NULL, plot2, nrow = 3, rel_heights = c(0.5, 0.05, 0.5))
+panel_leavedifference <- plot_grid(plot3, NULL, variance_plot, nrow = 3, rel_heights = c(0.6, 0.05, 0.2))
+
+#ggsave(plot = panel_leavedifference, file = here("analysis_code", "QuickPlots", "FiguresForPaper", "panel_leavedifference.pdf"), height = 17, width = 16, dpi = 210)
+```
+
+# Extract Model Predictions and Statistics
+
+## Mobility Range
+```{r}
+maxDistance_summary <- get_subject_predictions_with_er(model_maxDistanceFromHomeKm_simple)
+maxDistance_summary$summary_stats <- maxDistance_summary$summary_stats %>%
+  mutate(Statistic = gsub(" ", "", Statistic))
+#write.csv(maxDistance_summary$summary_stats, here('analysis_code/StatsForBodyText/maxDistance_summary.csv'))
+#write.csv(maxDistance_summary$evidence_ratios, here('analysis_code/StatsForBodyText/maxDistance_stats.csv'))
+
+RadiusOfGyration_summary <- get_subject_predictions_with_er(model_radiusOfGyrationKm_simple)
+RadiusOfGyration_summary$summary_stats <- RadiusOfGyration_summary$summary_stats %>%
+  mutate(Statistic = gsub(" ", "", Statistic))
+
+#write.csv(RadiusOfGyration_summary$summary_stats, here('analysis_code/StatsForBodyText/radiusOfGyration_summary.csv'))
+#write.csv(RadiusOfGyration_summary$evidence_ratios, here('analysis_code/StatsForBodyText/radiusOfGyration_stats.csv'))
+```
+
+## Home Time Percentage
+```{r}
+summary_stats_HPer <- leavediff_summarystats_HPer(modelHomeTimePercent_simple)
+
+#write.csv(summary_stats_HPer$summary_stats, here('analysis_code/StatsForBodyText/HPer_summary.csv'))
+#write.csv(summary_stats_HPer$evidence_ratios, here('analysis_code/StatsForBodyText/HPer_stats.csv'))
+```
+
+## SDE
+```{r}
+SDE_summary <- leavediff_summarystats(model_SDE_simple)
+#write.csv(SDE_summary, here('analysis_code/StatsForBodyText/SDE_summary.csv'))
+
+SDE_stats <- leavediff_stats(model_SDE_simple)
+#write.csv(SDE_stats, here('analysis_code/StatsForBodyText/SDE_stats.csv'))
+```
+
+## Out-Of-Home Activity
+```{r}
+mAct_summary <- leavediff_summarystats_HPer(model_morningActivityMins_simple)
+#write.csv(mAct_summary$summary_stats, here('analysis_code/StatsForBodyText/mAct_summary.csv'))
+#write.csv(mAct_summary$evidence_ratios, here('analysis_code/StatsForBodyText/mAct_stats.csv'))
+
+aAct_summary <- leavediff_summarystats_HPer(model_afternoonActivityMins_simple)
+#write.csv(aAct_summary$summary_stats, here('analysis_code/StatsForBodyText/aAct_summary.csv'))
+#write.csv(aAct_summary$evidence_ratios, here('analysis_code/StatsForBodyText/aAct_stats.csv'))
+
+eAct_summary <- leavediff_summarystats_HPer(model_eveningActivityMins_simple)
+#write.csv(eAct_summary$summary_stats, here('analysis_code/StatsForBodyText/eAct_summary.csv'))
+#write.csv(eAct_summary$evidence_ratios, here('analysis_code/StatsForBodyText/eAct_stats.csv'))
+```
+
+## Spatial Complexity
+```{r}
+locvar_results <- posterior_summarystats(SpatialComplexityData, "Location Variance")
+entropy_results <- posterior_summarystats(SpatialComplexityData, "Spatial Entropy")
+m2m_results <- posterior_summarystats(SpatialComplexityData, "Major To Minor Ratio")
+
+#write.csv(locvar_results$summary_stats, here('analysis_code/StatsForBodyText/LoV_summary.csv'))
+#write.csv(locvar_results$evidence_ratios, here('analysis_code/StatsForBodyText/LoV_stats.csv'))
+
+#write.csv(entropy_results$summary_stats, here('analysis_code/StatsForBodyText/ent_summary.csv'))
+#write.csv(entropy_results$evidence_ratios, here('analysis_code/StatsForBodyText/ent_stats.csv'))
+
+#write.csv(m2m_results$summary_stats, here('analysis_code/StatsForBodyText/m2m_summary.csv'))
+#write.csv(m2m_results$evidence_ratios, here('analysis_code/StatsForBodyText/m2m_stats.csv'))
+```

@@ -1,0 +1,13 @@
+"","Statistic","Value"
+"1","FatherNotOnLeaveMean",8.06
+"2","FatherNotOnLeaveCI_Lower",6.79
+"3","FatherNotOnLeaveCI_Upper",9.47
+"4","FatherOnLeaveMean",5.81
+"5","FatherOnLeaveCI_Lower",4.58
+"6","FatherOnLeaveCI_Upper",7.32
+"7","MotherNotOnLeaveMean",7.76
+"8","MotherNotOnLeaveCI_Lower",6.37
+"9","MotherNotOnLeaveCI_Upper",9.35
+"10","MotherOnLeaveMean",7.22
+"11","MotherOnLeaveCI_Lower",6.03
+"12","MotherOnLeaveCI_Upper",8.58

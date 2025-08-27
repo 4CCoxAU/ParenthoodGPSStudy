@@ -1,0 +1,296 @@
+---
+title: "RQ1_LeaveDifferences"
+output: pdf_document
+date: "2025-06-18"
+editor_options: 
+  chunk_output_type: console
+---
+
+## Max Distance 
+```{r}
+priors_hurdle_gamma <- c(
+  # Main effects for Role (intercepts) - log scale for gamma mean
+  prior(normal(2, 1), class = b, coef = "RoleFather"),
+  prior(normal(2, 1), class = b, coef = "RoleMother"),
+  
+  # Role:Leave interactions:
+  prior(normal(0, 0.5), class = b, coef = "RoleFather:LeavePaternityLeave"),
+  prior(normal(0, 0.5), class = b, coef = "RoleMother:LeavePaternityLeave"),
+  
+  # Weekend interactions
+  prior(normal(0, 0.3), class = b, coef = "RoleFather:LeaveMaternityLeave:isWeekendWeekend"),
+  prior(normal(0, 0.3), class = b, coef = "RoleFather:LeavePaternityLeave:isWeekendWeekend"),
+  prior(normal(0, 0.3), class = b, coef = "RoleMother:LeaveMaternityLeave:isWeekendWeekend"),
+  prior(normal(0, 0.3), class = b, coef = "RoleMother:LeavePaternityLeave:isWeekendWeekend"),
+  
+  # Hurdle part (hu) - probability of having any distance
+  prior(normal(-1, 0.5), class = b, coef = "RoleFather", dpar = "hu"),
+  prior(normal(-1, 0.5), class = b, coef = "RoleMother", dpar = "hu"),
+  prior(normal(0, 0.5), class = b, dpar = "hu"),
+  
+  # Shape parameter (controls variability for gamma) - log scale
+  prior(normal(1, 0.5), class = b, coef = "RoleFather", dpar = "shape"),
+  prior(normal(1, 0.5), class = b, coef = "RoleMother", dpar = "shape"),
+  prior(normal(0, 0.3), class = b, dpar = "shape"),
+  
+  # Random effects
+  prior(exponential(2), class = sd),
+  prior(lkj(2), class = cor)
+)
+
+max_distance_simple <- fit_simple_hurdle_gamma_model(outcome_var = "maxDistanceFromHomeKm",
+                                               save_path = here("analysis_code/models"))
+```
+
+## radiusOfGyrationKm
+```{r}
+priors_hurdle <- c(
+  # Main effects for Role (intercepts)
+  prior(normal(0.5, 1), class = b, coef = "RoleFather"),
+  prior(normal(0.5, 1), class = b, coef = "RoleMother"),
+  
+  # Role:Leave interactions:
+  prior(normal(0, 0.5), class = b, coef = "RoleFather:LeavePaternityLeave"),
+  prior(normal(0, 0.5), class = b, coef = "RoleMother:LeavePaternityLeave"),
+  
+  # Hurdle part (hu) - probability of having any distance
+  prior(normal(-1, 0.5), class = b, coef = "RoleFather", dpar = "hu"),
+  prior(normal(-1, 0.5), class = b, coef = "RoleMother", dpar = "hu"),
+  prior(normal(0, 0.3), class = b, dpar = "hu"),
+  
+  # Sigma part - controls variability
+  prior(normal(0, 0.5), class = b, coef = "RoleFather", dpar = "sigma"),
+  prior(normal(0, 0.5), class = b, coef = "RoleMother", dpar = "sigma"),
+  prior(normal(0, 0.3), class = b, dpar = "sigma"),
+  
+  # Random effects
+  prior(exponential(2), class = sd),
+  prior(lkj(2), class = cor)
+)
+
+radiusofgyration_simple <- fit_simple_hurdle_model(outcome_var = "radiusOfGyrationKm",
+                                               save_path = here("analysis_code/models"))
+```
+
+## locationVariance 
+
+```{r}
+priors_hurdle_gamma <- c(
+  # Main effects for Role (intercepts) - log scale for gamma mean
+  prior(normal(1, 1), class = b, coef = "RoleFather"),
+  prior(normal(1, 1), class = b, coef = "RoleMother"),
+  
+  # Role:Leave interactions:
+  prior(normal(0, 1), class = b, coef = "RoleFather:LeavePaternityLeave"),
+  prior(normal(0, 1), class = b, coef = "RoleMother:LeavePaternityLeave"),
+  
+  # Weekend interactions
+  prior(normal(0, 0.3), class = b, coef = "RoleFather:LeaveMaternityLeave:isWeekendWeekend"),
+  prior(normal(0, 0.3), class = b, coef = "RoleFather:LeavePaternityLeave:isWeekendWeekend"),
+  prior(normal(0, 0.3), class = b, coef = "RoleMother:LeaveMaternityLeave:isWeekendWeekend"),
+  prior(normal(0, 0.3), class = b, coef = "RoleMother:LeavePaternityLeave:isWeekendWeekend"),
+  
+  # Hurdle part (hu) - probability of having any distance
+  prior(normal(-1, 0.5), class = b, coef = "RoleFather", dpar = "hu"),
+  prior(normal(-1, 0.5), class = b, coef = "RoleMother", dpar = "hu"),
+  prior(normal(0, 0.5), class = b, dpar = "hu"),
+  
+  # Shape parameter (controls variability for gamma) - log scale
+  prior(normal(1, 0.5), class = b, coef = "RoleFather", dpar = "shape"),
+  prior(normal(1, 0.5), class = b, coef = "RoleMother", dpar = "shape"),
+  prior(normal(0, 0.3), class = b, dpar = "shape"),
+  
+  # Random effects
+  prior(exponential(2), class = sd),
+  prior(lkj(2), class = cor)
+)
+
+locationvariance_simple <- fit_simple_hurdle_gamma_model(outcome_var = "locationVariance", 
+                                                         save_path = here("analysis_code/models"))
+pp_check(model_locationVariance_simple, ndraws = 100) +
+  xlim(c(0, 20))
+```
+
+## Entropy 
+```{r}
+priors_hurdle <- c(
+  # Main effects for Role (intercepts)
+  prior(normal(-1.5, 1), class = b, coef = "RoleFather"),
+  prior(normal(-1.5, 1), class = b, coef = "RoleMother"),
+  
+  # Role:Leave interactions:
+  prior(normal(0, 0.5), class = b, coef = "RoleFather:LeavePaternityLeave"),
+  prior(normal(0, 0.5), class = b, coef = "RoleMother:LeavePaternityLeave"),
+  
+  # Priors for other interactions
+  prior(normal(0, 0.3), class = b),
+  
+  # Hurdle part (hu) - probability of having any distance
+  prior(normal(-1, 0.5), class = b, coef = "RoleFather", dpar = "hu"),
+  prior(normal(-1, 0.5), class = b, coef = "RoleMother", dpar = "hu"),
+  prior(normal(0, 0.3), class = b, dpar = "hu"),
+  
+  # Sigma part - controls variability
+  prior(normal(0, 0.5), class = b, coef = "RoleFather", dpar = "sigma"),
+  prior(normal(0, 0.5), class = b, coef = "RoleMother", dpar = "sigma"),
+  prior(normal(0, 0.3), class = b, dpar = "sigma"), 
+  
+  # Random effects
+  prior(exponential(2), class = sd),
+  prior(lkj(2), class = cor)
+)
+
+entropy_simple <- fit_simple_hurdle_model(outcome_var = "entropy",
+                                               save_path = here("analysis_code/models"))
+
+```
+
+## SDE 
+
+```{r}
+priors_hurdle <- c(
+  # Main effects for Role (intercepts)
+  prior(normal(-2, 2), class = b, coef = "RoleFather"),
+  prior(normal(-2, 2), class = b, coef = "RoleMother"),
+  
+  # Role:Leave interactions:
+  prior(normal(0, 0.5), class = b, coef = "RoleFather:LeavePaternityLeave"),
+  prior(normal(0, 0.5), class = b, coef = "RoleMother:LeavePaternityLeave"),
+  
+  # Priors for other interactions
+  prior(normal(0, 0.3), class = b), 
+  
+  # Hurdle part (hu) - probability of having any distance
+  prior(normal(-1, 0.5), class = b, coef = "RoleFather", dpar = "hu"),
+  prior(normal(-1, 0.5), class = b, coef = "RoleMother", dpar = "hu"),
+  prior(normal(0, 0.3), class = b, dpar = "hu"),
+  
+  # Sigma part - controls variability
+  prior(normal(0, 0.5), class = b, coef = "RoleFather", dpar = "sigma"),
+  prior(normal(0, 0.5), class = b, coef = "RoleMother", dpar = "sigma"),
+  prior(normal(0, 0.3), class = b, dpar = "sigma"),
+  
+  # Random effects
+  prior(exponential(2), class = sd),
+  prior(lkj(2), class = cor)
+)
+
+SDE_simple <- fit_simple_hurdle_model(outcome_var = "SDE",
+                                               save_path = here("analysis_code/models"))
+```
+
+## Morning, afternoon and evening activity 
+```{r}
+priors_hurdle <- c(
+  # Main effects for Role (intercepts)
+  prior(normal(3, 3), class = b, coef = "RoleFather"),
+  prior(normal(3, 3), class = b, coef = "RoleMother"),
+  
+  # Role:Leave interactions:
+  prior(normal(0, 0.5), class = b, coef = "RoleFather:LeavePaternityLeave"),
+  prior(normal(0, 0.5), class = b, coef = "RoleMother:LeavePaternityLeave"),
+  
+  # Priors for other interactions
+  prior(normal(0, 0.3), class = b),
+  
+  # Hurdle part (hu) - probability of having any distance
+  prior(normal(-1, 0.5), class = b, coef = "RoleFather", dpar = "hu"),
+  prior(normal(-1, 0.5), class = b, coef = "RoleMother", dpar = "hu"),
+  prior(normal(0, 0.3), class = b, dpar = "hu"),
+  
+  # Sigma part - controls variability
+  prior(normal(0, 0.5), class = b, coef = "RoleFather", dpar = "sigma"),
+  prior(normal(0, 0.5), class = b, coef = "RoleMother", dpar = "sigma"),
+  prior(normal(0, 0.3), class = b, dpar = "sigma"),
+  
+  # Random effects
+  prior(exponential(2), class = sd),
+  prior(lkj(2), class = cor)
+)
+
+morningactivity_simple <- fit_simple_hurdle_model(outcome_var = "morningActivityMins",
+                                               save_path = here("analysis_code/models"))
+afternoonactivity_simple <- fit_simple_hurdle_model(outcome_var = "afternoonActivityMins",
+                                               save_path = here("analysis_code/models"))
+eveningactivity_simple <- fit_simple_hurdle_model(outcome_var = "eveningActivityMins",
+                                               save_path = here("analysis_code/models"))
+```
+
+
+# Simple ZOIB Models
+
+## Home-Time Percentage
+```{r}
+d_GPS <- d_GPS %>%
+  mutate(totalHomeTimePercent_01 = 1 - totalOHTimePercent / 100)
+
+formula_zoib <- bf(
+  totalHomeTimePercent_01 ~ 0 + Role + Role:Leave + Role:Leave:isWeekend + (Leave | gr(ParticipantID, by = Role)),
+  zoi ~ 0 + Role + Role:Leave + Role:Leave:isWeekend,
+  coi ~ 0 + Role + Role:Leave + Role:Leave:isWeekend,
+  phi ~ 0 + Role + Role:Leave + Role:Leave:isWeekend
+)
+
+modelHomeTimePercent_simple <- brm(
+    formula_zoib,
+    #prior = priors_zoib,
+    family = zero_one_inflated_beta(),
+    data = d_GPS,
+    init = 0,
+    cores = 64,
+    chains = 2,
+    warmup = 500,
+    iter = 2000,
+    control = list(adapt_delta = 0.9, max_treedepth = 15),
+    backend = 'cmdstan')
+
+saveRDS(modelHomeTimePercent_simple, '/work/Paternity-leave/01. BarselProject/niels_geospatial/analysis_code/models/modelHomeTimePercent_simple.rds')
+
+pp_check(modelHomeTimePercent, ndraws = 100)
+```
+
+
+# Simple Lognormal Models
+
+## MajMin Ratio
+```{r}
+formula_1 <- bf(
+  maj2MinAxisRatio ~ 0 + Role + Role:Leave + Role:Leave + Role:Leave:isWeekend + (Leave | ParticipantID),
+  sigma ~ 0 + Role + Role:Leave + Role:Leave:isWeekend
+)
+
+priors_hurdle <- c(
+  # Main effects for Role (intercepts)
+  prior(normal(2, 2), class = b, coef = "RoleFather"),
+  prior(normal(2, 2), class = b, coef = "RoleMother"),
+  
+  # Role:Leave interactions:
+  prior(normal(0, 0.5), class = b, coef = "RoleFather:LeavePaternityLeave"),
+  prior(normal(0, 0.5), class = b, coef = "RoleMother:LeavePaternityLeave"),
+  
+  # Priors for other interactions
+  prior(normal(0, 0.3), class = b),
+  
+  # Sigma part - controls variability
+  prior(normal(0, 0.5), class = b, coef = "RoleFather", dpar = "sigma"),
+  prior(normal(0, 0.5), class = b, coef = "RoleMother", dpar = "sigma"),
+  prior(normal(0, 0.3), class = b, dpar = "sigma"),
+  
+  # Random effects
+  prior(exponential(2), class = sd),
+  prior(lkj(2), class = cor)
+)
+
+modelmaj2min_simple <- brm(
+    formula_1,
+    family = lognormal(),
+    data = d_GPS,
+    cores = 64,
+    chains = 2,
+    warmup = 500,
+    iter = 2000,
+    control = list(adapt_delta = 0.95, max_treedepth = 20),
+    backend = 'cmdstan')
+
+saveRDS(modelmaj2min_simple, here("analysis_code", "models", "model_maj2min_simple.rds"))
+```

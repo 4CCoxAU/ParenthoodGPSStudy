@@ -1,0 +1,97 @@
+---
+title: "gps_analysis_script"
+author: "Chris Cox"
+date: "2025-08-20"
+output: pdf_document
+editor_options: 
+  chunk_output_type: console
+---
+
+# Read in ...
+
+## ... Packages
+
+```{r setup, include=FALSE}
+Sys.setenv(DOWNLOAD_STATIC_LIBV8 = 1)
+install.packages('Rcpp', type = "source")
+library(Rcpp)
+install.packages('ggplot2', version = "3.3.5")
+library(ggplot2)
+options(mc.cores = parallel::detectCores())
+install.packages('tidybayes')
+library(tidybayes)
+install.packages('pacman')
+
+## Load libraries
+library(pacman)
+pacman::p_load(tidyverse,
+               ggcorrplot,
+               ggquiver,
+               job,
+               cowplot,
+               ggrain,
+               here, 
+               brms,
+               readxl,
+               ggridges,
+               viridis,
+               patchwork,
+               ggbeeswarm,
+               bayesplot,
+               #faux,
+               bayestestR,
+               see,
+               modelr,
+               xtable,
+               gghalves,
+               gganimate,
+               crqa,
+               mvgam,
+               tidybayes,
+               geosphere,
+               metR,
+               plotly,
+               MASS,
+               rmarkdown,
+               imputeTS,
+               deSolve,
+               corrr,
+               igraph,
+               ggraph,
+               psych,
+               cocor,
+               corrplot,
+               tidymodels,
+               reshape2,
+               ggh4x,
+               ggokabeito)
+
+install.packages('brms')
+library(brms)
+install.packages("cmdstanr", repos = c('https://stan-dev.r-universe.dev', getOption("repos")))
+library(cmdstanr)
+check_cmdstan_toolchain(fix = TRUE, quiet = TRUE)
+install_cmdstan(cores = 64)
+select <- dplyr::select
+summarize <- dplyr::summarise
+filter <- dplyr::filter
+
+# Reload here
+detach("package:here", unload = TRUE)
+getwd()
+setwd("/work/Paternity-leave/01. BarselProject/niels_geospatial")
+library(here)
+here()
+```
+
+## ... Functions
+
+```{r}
+source(here("analysis_code/functions.R"))
+```
+
+## ... Data
+
+```{r}
+source(here("analysis_code/readindata.R"))
+```

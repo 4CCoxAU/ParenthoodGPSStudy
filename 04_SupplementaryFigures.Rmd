@@ -1,0 +1,397 @@
+---
+title: "SupplementaryFigures"
+output: pdf_document
+date: "2025-06-10"
+editor_options: 
+  chunk_output_type: console
+---
+
+# Study Overview Plot:
+
+## Example of one week of GPS data
+
+```{r}
+one_week_clean <- read.csv(here("analysis_code", 'one_week_clean_gpsplot.csv'))
+
+# Plot with time periods
+oneweekgps <- ggplot(one_week_clean, aes(x = lon, y = lat)) +
+  geom_path(aes(color = time_color), alpha = 0.9, size = 1) +
+  geom_point(aes(x = HomeLon, y = HomeLat), alpha = 0.9, size = 3.8, data = one_week_clean, color = "black") +
+  geom_point(aes(x = HomeLon, y = HomeLat), alpha = 0.9, size = 3, data = one_week_clean, color = "#E7298AFF") +
+  facet_wrap(~day_of_week, scale = "free", ncol = 7) +
+  scale_color_manual(values = c("Morning" = "#1B9E77FF", "Afternoon" = "#D95F02FF", "Evening" = "#7570B3FF"),
+                     name = "Time Period") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size=20, face = "bold"), 
+        axis.text.x = element_blank(),
+        axis.title.x = element_text(size = 15, color = "black"),
+        axis.text.y = element_blank(),
+        axis.title.y = element_text(size = 15, color = "black"),
+        axis.ticks = element_blank(),
+        legend.title = element_blank(),
+        legend.position = "bottom",
+        legend.text = element_text(size = 15),
+        strip.background = element_rect(color="white", fill="white", linewidth=1.5, linetype="solid"),
+        strip.text.x = element_text(size = 20, color = "black"),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank()) +
+  labs(x = "Longitude", y = "Latitude", title = 'A) Raw GPS Data')
+```
+
+## Overview of Measures
+
+```{r}
+measures_data <- data.frame(
+    measure = rep(c("Postnatal Depression (EPDS)", 
+                    "Epworth Sleepiness",
+                    "GPS Tracking", 
+                    "Daily Sleep Quality"), 2),
+    period = rep(c("Maternity Leave", 
+                   "Paternity Leave"), 
+                 each = 4),
+    collection = c("Pre-Tracking", "Pre-Tracking", "7 days", "7 days",
+                   "Pre-Tracking", "Pre-Tracking", "7 days", "7 days"),
+    measure_type = rep(c("Questionnaire", "Questionnaire", "Continuous Tracking", "Daily Report"), 2),
+    x_pos = rep(c(1, 2), each = 4),
+    y_pos = rep(4:1, 2)
+  )
+  
+measures <- ggplot(measures_data, aes(x = x_pos, y = y_pos)) +
+    geom_tile(aes(fill = measure_type), color = "white", size = 5, alpha = 0.8,
+              width = 0.8, height = 0.7) +  # Increased height for tiles
+    geom_text(aes(label = collection), fontface = "bold", color = "white", size = 5.5) +
+    
+    # Add measure labels on the left
+    geom_text(data = data.frame(measure = c("Edinburgh Postnatal Depression Scale", 
+                                           "Epworth Sleepiness Scale", 
+                                           "GPS Tracking", 
+                                           "Sleep Quality"),
+                               y_pos = 4:1),
+              aes(x = .5, y = y_pos, label = measure), 
+              hjust = 1, fontface = "bold", size = 4.5, inherit.aes = FALSE) +
+    
+    scale_fill_manual(values = c("Questionnaire" = "#F18F01", 
+                                "Continuous Tracking" = "#2E86AB", 
+                                "Daily Report" = "#A23B72"),
+                     name = " ") +
+    scale_x_continuous(breaks = c(1, 2), 
+                      labels = c("Maternity Leave", "Paternity Leave"),
+                      limits = c(-0.6, 2.4)) +  # Tighter x limits
+    scale_y_continuous(limits = c(0.5, 4.5)) +  # Tighter y limits
+    theme_void() +
+    theme(plot.title = element_text(size = 20, color = "black", face = "bold", hjust = 0.5), 
+        axis.text.x = element_text(size = 15, color = "black", vjust = 4.9),
+        axis.text.y = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.ticks = element_blank(),
+        legend.title = element_blank(),
+        legend.position = "top",
+        legend.text = element_text(size = 15),
+        strip.background = element_rect(color="white", fill="white", linewidth=1.5, linetype="solid"),
+        strip.text.x = element_text(size = 20, color = "black"),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank()) +
+    labs(title = "B) Data Collection Overview")
+measures
+```
+
+## Overview of DBSCAN
+
+```{r}
+create_circle <- function(center_x, center_y, radius, npoints = 100) {
+  angles <- seq(0, 2*pi, length.out = npoints)
+  data.frame(
+    x = center_x + radius * cos(angles),
+    y = center_y + radius * sin(angles)
+  )
+}
+
+create_comprehensive_dbscan_plot <- function(seed) {
+  
+  set.seed(seed)
+  
+  # Create GPS point clusters
+  home_points <- data.frame(
+    lon = rnorm(40, 10.370, 0.0007),
+    lat = rnorm(40, 56.430, 0.0007),
+    type = "Stay Location",
+    stay_type = "Home",  # Keep original stay_type
+    cluster_id = "Cluster"
+  ) %>%
+  rowwise() %>%
+  mutate(distance_to_centre = distHaversine(c(lon, lat), c(10.370, 56.430))) %>%
+  ungroup() %>%
+  mutate(
+    stay_type = ifelse(distance_to_centre > 148, "Noise", "Home"),  # Keep "Home" for close points
+    cluster_id = ifelse(distance_to_centre > 148, "Noise", "Cluster"),
+    type = ifelse(distance_to_centre > 148, "Movement", "Stay Location")
+  )
+  
+  work_points <- data.frame(
+    lon = rnorm(30, 10.385, 0.0007),
+    lat = rnorm(30, 56.440, 0.0007), 
+    type = "Stay Location",
+    stay_type = "Work",  # Keep original stay_type
+    cluster_id = "Cluster"
+  ) %>%
+  rowwise() %>%
+  mutate(distance_to_centre = distHaversine(c(lon, lat), c(10.385, 56.440))) %>%
+  ungroup() %>%
+  mutate(
+    stay_type = ifelse(distance_to_centre > 140, "Noise", "Work"),  # Keep "Work" for close points
+    cluster_id = ifelse(distance_to_centre > 140, "Noise", "Cluster"),
+    type = ifelse(distance_to_centre > 140, "Movement", "Stay Location")
+  )
+  
+  shop_points <- data.frame(
+    lon = rnorm(22, 10.375, 0.0005),
+    lat = rnorm(22, 56.425, 0.0005),
+    type = "Stay Location", 
+    stay_type = "Shop",  # Keep original stay_type
+    cluster_id = "Cluster"
+  ) %>%
+  rowwise() %>%
+  mutate(distance_to_centre = distHaversine(c(lon, lat), c(10.375, 56.425))) %>%
+  ungroup() %>%
+  mutate(
+    stay_type = ifelse(distance_to_centre > 150, "Noise", "Shop"),  # Keep "Shop" for close points
+    cluster_id = ifelse(distance_to_centre > 150, "Noise", "Cluster"),
+    type = ifelse(distance_to_centre > 150, "Movement", "Stay Location")
+  )
+  
+  # Movement points - these are always Noise
+movement_points <- data.frame(
+  lon = c(10.372, 10.374, 10.376, 10.378, 10.382,  # Path HOME to WORK
+          10.371, 10.373,                           # Path HOME to SHOP
+          10.381, 10.377),                          # Path WORK to SHOP
+  lat = c(56.431, 56.432, 56.433, 56.435, 56.438,  # Path HOME to WORK
+          56.428, 56.427,                           # Path HOME to SHOP
+          56.437, 56.430),                          # Path WORK to SHOP
+  type = "Movement",
+  stay_type = "Noise",  # These are always noise
+  cluster_id = "Movement",  # CHANGED: from "Noise" to "Movement"
+  distance_to_centre = NA
+)
+
+  # Combine all points
+  all_points <- rbind(home_points, work_points, shop_points, movement_points)
+  
+  # Create three movement paths
+  path_home_work <- data.frame(
+    lon = c(10.370, 10.372, 10.374, 10.376, 10.378, 10.382, 10.385),
+    lat = c(56.430, 56.431, 56.432, 56.433, 56.435, 56.438, 56.440),
+    path_id = "home_work"
+  )
+  
+  path_home_shop <- data.frame(
+    lon = c(10.370, 10.371, 10.373, 10.375),
+    lat = c(56.430, 56.428, 56.427, 56.425),
+    path_id = "home_shop"
+  )
+  
+  path_work_shop <- data.frame(
+    lon = c(10.385, 10.381, 10.377, 10.375),
+    lat = c(56.440, 56.437, 56.430, 56.425),
+    path_id = "work_shop"
+  )
+  
+  # Create DBSCAN radius circles
+  radius <- 0.0015
+  home_circle <- create_circle(10.370, 56.430, radius)
+  work_circle <- create_circle(10.385, 56.440, radius) 
+  shop_circle <- create_circle(10.375, 56.425, radius)
+  
+  # Create the comprehensive plot
+  ggplot() +
+    
+    # Add movement paths FIRST (so they're behind everything)
+    geom_path(data = path_home_work, aes(x = lon, y = lat), color = "black", size = 1, alpha = 0.9, linetype = "dotted") +
+    geom_path(data = path_home_shop, aes(x = lon, y = lat), color = "black", size = 1, alpha = 0.9, linetype = "dotted") +
+    geom_path(data = path_work_shop, aes(x = lon, y = lat), color = "black", size = 1, alpha = 0.9, linetype = "dotted") +
+  
+    # Add clustering radius circles
+    geom_polygon(data = home_circle, aes(x = x, y = y), fill = "#C73E1D", alpha = 0.2, color = "#C73E1D", linetype = "dashed", size = 1.2) +
+    geom_polygon(data = work_circle, aes(x = x, y = y), fill = "#2E86AB", alpha = 0.2, color = "#2E86AB", linetype = "dashed", size = 1.2) +
+    geom_polygon(data = shop_circle, aes(x = x, y = y), fill = "#F18F01", alpha = 0.2, color = "#F18F01", linetype = "dashed", size = 1.2) +
+
+    # Add GPS points
+    geom_point(data = filter(all_points, cluster_id != "Movement"), aes(x = lon, y = lat, color = stay_type, shape = cluster_id, size = type), alpha = 0.9) +
+    
+    # Color scheme - now includes "Noise"
+    scale_color_manual(values = c("Home" = "#C73E1D",  "Work" = "#2E86AB", "Shop" = "#F18F01", "Noise" = "black"), name = "Location Type") +
+    
+    # Shape scheme for DBSCAN results
+    #scale_shape_manual(values = c("Cluster" = 16, "Noise" = 4), name = "DBSCAN Result", labels = c("Stay (Cluster)", "Noise")) +
+    # Shape scheme for DBSCAN results
+    scale_shape_manual(values = c("Cluster" = 16, "Noise" = 4), name = "DBSCAN Result", labels = c("Stay", "Noise")) +
+    
+    # Size scheme
+    scale_size_manual(values = c("Stay Location" = 2, "Noise" = 2, "Movement" = 4), guide = "none") +
+    
+    # Add location labels
+    annotate("text", x = 10.370, y = 56.4275, label = "HOME", 
+             fontface = "bold", size = 6, hjust = 0.5, color = "#C73E1D") +
+    annotate("text", x = 10.385, y = 56.4425, label = "WORK", 
+             fontface = "bold", size = 6, hjust = 0.5, color = "#2E86AB") +
+    annotate("text", x = 10.375, y = 56.4225, label = "SHOP", 
+             fontface = "bold", size = 6, hjust = 0.5, color = "#F18F01") +
+    
+    # Add these annotations for a clean manual legend (bigger, moved down and right)
+annotate("point", x = 10.393 - 0.007, y = 56.429, size = 4, color = "black") +
+annotate("text", x = 10.395 - 0.007, y = 56.429, label = "Stationary Behavior", hjust = 0, size = 4) +
+
+annotate("point", x = 10.393 - 0.007, y = 56.427, shape = 4, size = 4, color = "black") +
+annotate("text", x = 10.395 - 0.007, y = 56.427, label = "Isolated GPS Points", hjust = 0, size = 4) +
+
+annotate("segment", x = 10.393 - 0.008, xend = 10.394 - 0.007, y = 56.425, yend = 56.425, 
+         linetype = "dotted", size = 1, color = "black") +
+annotate("text", x = 10.395 - 0.007, y = 56.425, label = "Travel Between Stays", hjust = 0, size = 4) +
+
+    xlim(10.368, 10.395) +
+    #ylim(56.422, 56.442) +
+    
+    # Theme
+    theme_minimal() +
+    theme(plot.title = element_text(size = 20, color = "black", face = "bold", hjust = 0.5), 
+          plot.subtitle = element_text(size = 15, color = "black", hjust = 0.5), 
+        axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.title.x = element_text(size = 15, color = "black"),
+        axis.title.y = element_text(size = 15, color = "black"),
+        axis.ticks = element_blank(),
+        legend.title = element_blank(),
+        legend.position = "none",
+        legend.text = element_text(size = 15),
+        strip.background = element_rect(color="white", fill="white", linewidth=1.5, linetype="solid"),
+        strip.text.x = element_text(size = 20, color = "black"),
+        #panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank()) +
+    labs(
+      title = "C) GPS Stay Detection Using DBSCAN Clustering",
+      subtitle = "150m Radius | Minimum 20 Points & 5 Mins | Speed-Weighted Clustering",
+      x = "Longitude", 
+      y = "Latitude"
+    )
+}
+
+# Create the plot
+comprehensive_plot <- create_comprehensive_dbscan_plot(seed = 59)
+comprehensive_plot
+```
+
+## Correlation Plots
+
+```{r}
+
+create_grouped_correlation_heatmap <- function(data) {
+  
+  # Select metrics
+  gps_metrics <- data %>%
+    select(
+      # Distance Metrics (grouped together)
+      radiusOfGyrationKm,
+      maxDistanceFromHomeKm,
+      # Spatial Complexity (grouped together)
+      SDE,
+      locationVariance,
+      maj2MinAxisRatio,
+      
+      # Daily Activity Patterns (grouped together)
+      morningActivityMins,
+      afternoonActivityMins,
+      eveningActivityMins,
+      homeTimePercent,
+      
+      # Movement Characteristics (grouped together)
+      entropy
+    )
+  
+  # Create grouped clean names (CORRECTED ORDER)
+  clean_names <- c(
+    # Distance Metrics (same order as select)
+    "Radius of Gyration",
+    "Max Distance", 
+  
+    # Spatial Complexity (same order as select)
+    "Activity Space",
+    "Location Variance",
+    "Major/Minor Ratio",
+    
+    # Daily Activity Patterns (same order as select)
+    "Morning Activity",
+    "Afternoon Activity", 
+    "Evening Activity",
+    "Home Time %",
+    
+    # Movement Characteristics (same order as select)
+    "Spatial Entropy"
+  )
+  
+  colnames(gps_metrics) <- clean_names
+  
+  # Calculate correlation matrix (already in logical osrder)
+  cor_matrix <- cor(gps_metrics, use = "complete.obs")
+  cor_matrix[upper.tri(cor_matrix)] <- NA
+  
+  # Convert to long format
+  cor_long <- melt(cor_matrix, na.rm = TRUE)
+  names(cor_long) <- c("Var1", "Var2", "Correlation")
+  
+  # Keep the logical order
+  cor_long$Var1 <- factor(cor_long$Var1, levels = clean_names)
+  cor_long$Var2 <- factor(cor_long$Var2, levels = clean_names)
+  
+  # Create the heatmap
+  ggplot(cor_long, aes(x = Var1, y = Var2, fill = Correlation)) +
+    geom_tile(color = "black", size = 0.5) +
+    
+    # Color scale
+    scale_fill_gradient2(low = viridis(n = 3)[1], mid = "white", high = viridis(n = 3)[2],
+                        midpoint = 0, limit = c(-1, 1),
+                        name = expression("Correlation (" * italic(r) * ")")) +
+
+    # Add group separators
+    #geom_vline(xintercept = c(5.5, 9.5, 13.5), color = "black", size = 1) +
+    #geom_hline(yintercept = c(5.5, 9.5, 13.5), color = "black", size = 1) +
+    
+    # Theme
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1, size = 13, color = "black"),
+      axis.text.y = element_text(size = 13, color = "black"),
+      #axis.text.y = element_blank(),
+      axis.title = element_blank(),
+      legend.position = "none",
+      
+      legend.key.width = unit(0.5, "cm"),    # Make legend wider
+      legend.key.height = unit(1.3, "cm"),   # Make legend taller
+      legend.title = element_text(size = 16, face = "bold"),  # Bigger title
+      legend.text = element_text(size = 14),  # Bigger numbers
+      
+      plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+      panel.grid = element_blank()
+    ) +
+    labs(title = "D) Father Correlation Matrix")
+}
+
+grouped_heatmap <- create_grouped_correlation_heatmap(filter(d_GPS, Role == "Father"))
+grouped_heatmap_m <- create_grouped_correlation_heatmap(filter(d_GPS, Role == "Mother"))
+
+studyinfo <- plot_grid(measures, NULL, comprehensive_plot, 
+                       rel_widths = c(1, 0.1, 1),
+                       ncol = 3)
+
+grouped_heatmaps <- plot_grid(grouped_heatmap, NULL, grouped_heatmap_m, nrow = 1, rel_widths = c(1, 0.1, 1))
+
+StudyOverviewPlot <- plot_grid(oneweekgps, NULL, studyinfo, NULL, grouped_heatmaps, 
+                               rel_heights = c(1, 0.2, 1, 0.2, 1),
+                               nrow = 5)
+
+ggsave(plot = StudyOverviewPlot, 
+       file = '/work/Paternity-leave/01. BarselProject/niels_geospatial/analysis_code/QuickPlots/FiguresForPaper/StudyOverviewPlot.pdf',
+       height = 17, width = 18.5,
+       dpi = 600,
+       device = cairo_pdf)
+```
+
