@@ -2,13 +2,13 @@
 
 This repository contains data, code and supplementary materials for the following paper:
 
-**Cox, C., Værbak, N., & Parsons, C. (2025). Depression is Associated with Spatial Restriction in Fathers and Mothers on Parental Leave: a GPS Tracking Study.**
+Depression is Associated with Spatial Restriction in Fathers and Mothers on Parental Leave: a GPS Tracking Study.
 
 ## Overview
 
 This project uses continuous GPS tracking of 171 first-time Danish parents to examine how spatial mobility, mental health, and sleep quality change during parental leave periods. The study reveals that depression symptoms create detectable spatial signatures even within the naturally constrained context of parental leave.
 
-**OSF link:** [To be added]
+**OSF link:** https://osf.io/d4mt6/?view_only=15ee29712b394f0eac18a5507cc20639
 
 ## Repository Structure
 
@@ -88,12 +88,4 @@ analysis_code/
 
 ## Data Availability
 
-Raw GPS data cannot be shared due to privacy concerns. Simulated dataset available at [OSF link].
-
-## Citation
-
-Cox, C., Værbak, N., & Parsons, C. (2025). Depression is Associated with Spatial Restriction in Fathers and Mothers on Parental Leave: a GPS Tracking Study.
-
-## Contact
-
-Christopher Cox (chris.mm.cox@gmail.com)
+Raw GPS data cannot be shared due to privacy concerns. Simulated dataset available to test code (see supplementary materials for more information).
