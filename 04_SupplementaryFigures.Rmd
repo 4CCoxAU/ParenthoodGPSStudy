@@ -11,7 +11,10 @@ editor_options:
 ## Example of one week of GPS data
 
 ```{r}
-one_week_clean <- read.csv(here("analysis_code", 'one_week_clean_gpsplot.csv'))
+one_week_clean <- read.csv(here("analysis_code", 'one_week_clean_gpsplot.csv')) %>%
+  one_week_clean <- read.csv(here("analysis_code", 'one_week_clean_gpsplot.csv')) %>%
+  mutate(day_of_week = factor(one_week_clean$day_of_week, levels = c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"))) %>%
+  mutate(time_color = factor(one_week_clean$time_color, levels = c("Morning", "Afternoon", "Evening")))
 
 # Plot with time periods
 oneweekgps <- ggplot(one_week_clean, aes(x = lon, y = lat)) +
@@ -113,14 +116,14 @@ create_comprehensive_dbscan_plot <- function(seed) {
   
   # Create GPS point clusters
   home_points <- data.frame(
-    lon = rnorm(40, 10.370, 0.0007),
-    lat = rnorm(40, 56.430, 0.0007),
+    lon = rnorm(40, 0.0, 0.0007),
+    lat = rnorm(40, 0.0, 0.0007),
     type = "Stay Location",
     stay_type = "Home",  # Keep original stay_type
     cluster_id = "Cluster"
   ) %>%
   rowwise() %>%
-  mutate(distance_to_centre = distHaversine(c(lon, lat), c(10.370, 56.430))) %>%
+  mutate(distance_to_centre = distHaversine(c(lon, lat), c(0.0, 0.0))) %>%
   ungroup() %>%
   mutate(
     stay_type = ifelse(distance_to_centre > 148, "Noise", "Home"),  # Keep "Home" for close points
@@ -129,14 +132,14 @@ create_comprehensive_dbscan_plot <- function(seed) {
   )
   
   work_points <- data.frame(
-    lon = rnorm(30, 10.385, 0.0007),
-    lat = rnorm(30, 56.440, 0.0007), 
+    lon = rnorm(30, 0.015, 0.0007),
+    lat = rnorm(30, 0.010, 0.0007), 
     type = "Stay Location",
     stay_type = "Work",  # Keep original stay_type
     cluster_id = "Cluster"
   ) %>%
   rowwise() %>%
-  mutate(distance_to_centre = distHaversine(c(lon, lat), c(10.385, 56.440))) %>%
+  mutate(distance_to_centre = distHaversine(c(lon, lat), c(0.015, 0.010))) %>%
   ungroup() %>%
   mutate(
     stay_type = ifelse(distance_to_centre > 140, "Noise", "Work"),  # Keep "Work" for close points
@@ -145,14 +148,14 @@ create_comprehensive_dbscan_plot <- function(seed) {
   )
   
   shop_points <- data.frame(
-    lon = rnorm(22, 10.375, 0.0005),
-    lat = rnorm(22, 56.425, 0.0005),
+    lon = rnorm(22, 0.005, 0.0005),
+    lat = rnorm(22, -0.005, 0.0005),
     type = "Stay Location", 
     stay_type = "Shop",  # Keep original stay_type
     cluster_id = "Cluster"
   ) %>%
   rowwise() %>%
-  mutate(distance_to_centre = distHaversine(c(lon, lat), c(10.375, 56.425))) %>%
+  mutate(distance_to_centre = distHaversine(c(lon, lat), c(0.005, -0.005))) %>%
   ungroup() %>%
   mutate(
     stay_type = ifelse(distance_to_centre > 150, "Noise", "Shop"),  # Keep "Shop" for close points
@@ -162,12 +165,12 @@ create_comprehensive_dbscan_plot <- function(seed) {
   
   # Movement points - these are always Noise
 movement_points <- data.frame(
-  lon = c(10.372, 10.374, 10.376, 10.378, 10.382,  # Path HOME to WORK
-          10.371, 10.373,                           # Path HOME to SHOP
-          10.381, 10.377),                          # Path WORK to SHOP
-  lat = c(56.431, 56.432, 56.433, 56.435, 56.438,  # Path HOME to WORK
-          56.428, 56.427,                           # Path HOME to SHOP
-          56.437, 56.430),                          # Path WORK to SHOP
+  lon = c(0.002, 0.004, 0.006, 0.008, 0.012,  # Path HOME to WORK
+          0.001, 0.003,                        # Path HOME to SHOP
+          0.011, 0.007),                       # Path WORK to SHOP
+  lat = c(0.001, 0.002, 0.003, 0.005, 0.008,  # Path HOME to WORK
+          -0.002, -0.003,                      # Path HOME to SHOP
+          0.007, 0.000),                       # Path WORK to SHOP
   type = "Movement",
   stay_type = "Noise",  # These are always noise
   cluster_id = "Movement",  # CHANGED: from "Noise" to "Movement"
@@ -179,28 +182,28 @@ movement_points <- data.frame(
   
   # Create three movement paths
   path_home_work <- data.frame(
-    lon = c(10.370, 10.372, 10.374, 10.376, 10.378, 10.382, 10.385),
-    lat = c(56.430, 56.431, 56.432, 56.433, 56.435, 56.438, 56.440),
+    lon = c(0.0, 0.002, 0.004, 0.006, 0.008, 0.012, 0.015),
+    lat = c(0.0, 0.001, 0.002, 0.003, 0.005, 0.008, 0.010),
     path_id = "home_work"
   )
   
   path_home_shop <- data.frame(
-    lon = c(10.370, 10.371, 10.373, 10.375),
-    lat = c(56.430, 56.428, 56.427, 56.425),
+    lon = c(0.0, 0.001, 0.003, 0.005),
+    lat = c(0.0, -0.002, -0.003, -0.005),
     path_id = "home_shop"
   )
   
   path_work_shop <- data.frame(
-    lon = c(10.385, 10.381, 10.377, 10.375),
-    lat = c(56.440, 56.437, 56.430, 56.425),
+    lon = c(0.015, 0.011, 0.007, 0.005),
+    lat = c(0.010, 0.007, 0.000, -0.005),
     path_id = "work_shop"
   )
   
   # Create DBSCAN radius circles
   radius <- 0.0015
-  home_circle <- create_circle(10.370, 56.430, radius)
-  work_circle <- create_circle(10.385, 56.440, radius) 
-  shop_circle <- create_circle(10.375, 56.425, radius)
+  home_circle <- create_circle(0.0, 0.0, radius)
+  work_circle <- create_circle(0.015, 0.010, radius) 
+  shop_circle <- create_circle(0.005, -0.005, radius)
   
   # Create the comprehensive plot
   ggplot() +
@@ -230,25 +233,25 @@ movement_points <- data.frame(
     scale_size_manual(values = c("Stay Location" = 2, "Noise" = 2, "Movement" = 4), guide = "none") +
     
     # Add location labels
-    annotate("text", x = 10.370, y = 56.4275, label = "HOME", 
+    annotate("text", x = 0.0, y = -0.0025, label = "HOME", 
              fontface = "bold", size = 6, hjust = 0.5, color = "#C73E1D") +
-    annotate("text", x = 10.385, y = 56.4425, label = "WORK", 
+    annotate("text", x = 0.015, y = 0.0125, label = "WORK", 
              fontface = "bold", size = 6, hjust = 0.5, color = "#2E86AB") +
-    annotate("text", x = 10.375, y = 56.4225, label = "SHOP", 
+    annotate("text", x = 0.005, y = -0.0075, label = "SHOP", 
              fontface = "bold", size = 6, hjust = 0.5, color = "#F18F01") +
     
     # Add these annotations for a clean manual legend (bigger, moved down and right)
-annotate("point", x = 10.393 - 0.007, y = 56.429, size = 4, color = "black") +
-annotate("text", x = 10.395 - 0.007, y = 56.429, label = "Stationary Behavior", hjust = 0, size = 4) +
+annotate("point", x = 0.023 - 0.007, y = -0.001, size = 4, color = "black") +
+annotate("text", x = 0.025 - 0.007, y = -0.001, label = "Stationary Behavior", hjust = 0, size = 4) +
 
-annotate("point", x = 10.393 - 0.007, y = 56.427, shape = 4, size = 4, color = "black") +
-annotate("text", x = 10.395 - 0.007, y = 56.427, label = "Isolated GPS Points", hjust = 0, size = 4) +
+annotate("point", x = 0.023 - 0.007, y = -0.003, shape = 4, size = 4, color = "black") +
+annotate("text", x = 0.025 - 0.007, y = -0.003, label = "Isolated GPS Points", hjust = 0, size = 4) +
 
-annotate("segment", x = 10.393 - 0.008, xend = 10.394 - 0.007, y = 56.425, yend = 56.425, 
+annotate("segment", x = 0.023 - 0.008, xend = 0.024 - 0.007, y = -0.005, yend = -0.005, 
          linetype = "dotted", size = 1, color = "black") +
-annotate("text", x = 10.395 - 0.007, y = 56.425, label = "Travel Between Stays", hjust = 0, size = 4) +
+annotate("text", x = 0.025 - 0.007, y = -0.005, label = "Travel Between Stays", hjust = 0, size = 4) +
 
-    xlim(10.368, 10.395) +
+    xlim(-0.002, 0.025) +
     #ylim(56.422, 56.442) +
     
     # Theme
